@@ -46,8 +46,8 @@ public class CallToolHandlerTests
         var result = await handler.HandleAsync(request, CancellationToken.None);
 
         var callResult = Assert.IsType<CallToolResult>(result);
-        Assert.False(callResult.isError);
-        Assert.Contains("echoed", callResult.content[0].text);
+        Assert.False(callResult.IsError);
+        Assert.Contains("echoed", callResult.Content[0].Text);
     }
 
     /// <summary>Verifies an error result is returned when the tool name is not found.</summary>
@@ -67,6 +67,6 @@ public class CallToolHandlerTests
         var result = await handler.HandleAsync(request, CancellationToken.None);
 
         var callResult = Assert.IsType<CallToolResult>(result);
-        Assert.True(callResult.isError);
+        Assert.True(callResult.IsError);
     }
 }

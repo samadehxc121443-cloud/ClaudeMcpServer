@@ -62,7 +62,7 @@ public sealed class CallToolHandler : IMcpRequestHandler
         try
         {
             var toolResult = await tool.ExecuteAsync(arguments, ct);
-            return new CallToolResult(toolResult.Content, toolResult.IsError);
+            return new CallToolResult([new ContentItem("text", toolResult.Content)], toolResult.IsError);
         }
         catch (Exception ex)
         {
@@ -71,29 +71,19 @@ public sealed class CallToolHandler : IMcpRequestHandler
         }
     }
 
-    private static object ErrorResult(string message) => new CallToolResult(message, true);
+    private static object ErrorResult(string message) =>
+        new CallToolResult([new ContentItem("text", message)], true);
 }
 
-/// <summary>Serializable result for the "tools/call" response.</summary>
-/// <param name="Content">The text output from the tool.</param>
+/// <summary>
+/// Serializable result for the "tools/call" response.
+/// Serialized with camelCase naming policy: Content → "content", IsError → "isError".
+/// </summary>
+/// <param name="Content">Content items in MCP format.</param>
 /// <param name="IsError">True if the tool returned an error rather than a success value.</param>
-public sealed record CallToolResult(string Content, bool IsError)
-{
-    /// <summary>Gets the content array in MCP format, containing a single text item.</summary>
-    public IReadOnlyList<ContentItem> content { get; } = [new ContentItem("text", Content)];
-
-    /// <summary>Gets whether this result is an error.</summary>
-    public bool isError { get; } = IsError;
-}
+public sealed record CallToolResult(IReadOnlyList<ContentItem> Content, bool IsError);
 
 /// <summary>A single content item within a tool call result.</summary>
 /// <param name="Type">The content type, e.g. "text".</param>
 /// <param name="Text">The text payload.</param>
-public sealed record ContentItem(string Type, string Text)
-{
-    /// <summary>Gets the content type.</summary>
-    public string type { get; } = Type;
-
-    /// <summary>Gets the text content.</summary>
-    public string text { get; } = Text;
-}
+public sealed record ContentItem(string Type, string Text);
