@@ -35,7 +35,6 @@ var host = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IToolHandler, SystemInfoTool>();
         services.AddSingleton<IToolHandler, DateTimeTool>();
         services.AddSingleton<IToolHandler, ReadFileTool>();
-        services.AddSingleton<IToolHandler, RunShellCommandTool>();
         services.AddSingleton<IToolHandler, ListDirectoryTool>();
 
         // Email tools — iCloud IMAP/SMTP via MailKit
