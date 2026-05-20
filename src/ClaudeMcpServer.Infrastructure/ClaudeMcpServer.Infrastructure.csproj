@@ -7,6 +7,8 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="MailKit" Version="4.16.0" />
+    <PackageReference Include="Microsoft.Extensions.Options" Version="10.0.8" />
     <ProjectReference Include="..\ClaudeMcpServer.Domain\ClaudeMcpServer.Domain.csproj" />
     <ProjectReference Include="..\ClaudeMcpServer.Application\ClaudeMcpServer.Application.csproj" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.8" />

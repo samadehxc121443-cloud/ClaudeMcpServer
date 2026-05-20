@@ -1,6 +1,7 @@
 using ClaudeMcpServer.Application.Handlers;
 using ClaudeMcpServer.Application.Services;
 using ClaudeMcpServer.Domain.Interfaces;
+using ClaudeMcpServer.Infrastructure.Configuration;
 using ClaudeMcpServer.Infrastructure.Registry;
 using ClaudeMcpServer.Infrastructure.Tools;
 using ClaudeMcpServer.Infrastructure.Transport;
@@ -27,12 +28,21 @@ var host = Host.CreateDefaultBuilder(args)
         // Tool registry — discovers all IToolHandler registrations automatically
         services.AddSingleton<IToolRegistry, ToolRegistry>();
 
+        // Email settings — bound from appsettings.json "Email" section
+        services.Configure<EmailSettings>(context.Configuration.GetSection("Email"));
+
         // Built-in tools — add new tools here with AddSingleton<IToolHandler, YourTool>()
         services.AddSingleton<IToolHandler, SystemInfoTool>();
         services.AddSingleton<IToolHandler, DateTimeTool>();
         services.AddSingleton<IToolHandler, ReadFileTool>();
         services.AddSingleton<IToolHandler, RunShellCommandTool>();
         services.AddSingleton<IToolHandler, ListDirectoryTool>();
+
+        // Email tools — iCloud IMAP/SMTP via MailKit
+        services.AddSingleton<IToolHandler, ListEmailsTool>();
+        services.AddSingleton<IToolHandler, ReadEmailTool>();
+        services.AddSingleton<IToolHandler, SearchEmailsTool>();
+        services.AddSingleton<IToolHandler, SendEmailTool>();
 
         // MCP method handlers
         services.AddSingleton<IMcpRequestHandler, InitializeHandler>();

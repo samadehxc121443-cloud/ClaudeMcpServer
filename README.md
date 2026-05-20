@@ -42,6 +42,8 @@ Connects [Claude Desktop](https://claude.ai/download) on macOS to a set of local
 
 ## Built-in Tools
 
+### System Tools
+
 | Tool | Description |
 |------|-------------|
 | `get_system_info` | OS, CPU architecture, .NET version, hostname, working set |
@@ -49,6 +51,17 @@ Connects [Claude Desktop](https://claude.ai/download) on macOS to a set of local
 | `read_file` | Read text/code files up to 1 MB (whitelisted extensions) |
 | `run_shell_command` | Execute whitelisted commands: `date`, `echo`, `ls`, `pwd`, `uname`, `whoami` |
 | `list_directory` | List directory contents with type, size, and modification date |
+
+### Email Tools (iCloud / me.com)
+
+| Tool | Description |
+|------|-------------|
+| `list_emails` | List recent emails from the iCloud inbox (sender, subject, date, preview) |
+| `read_email` | Read the full content of an email by its unique ID |
+| `search_emails` | Search inbox by subject, sender, body text, or all fields |
+| `send_email` | Send an email from the configured iCloud account |
+
+> **Setup:** Email tools require an [app-specific password](https://support.apple.com/en-us/102654) generated at appleid.apple.com. Set it in `appsettings.json` under `Email.Password`.
 
 ---
 
