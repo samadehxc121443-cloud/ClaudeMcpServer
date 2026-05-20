@@ -25,8 +25,8 @@ The .NET 10 SDK is installed at a non-standard path. Always use it explicitly:
 # Smoke-test the server (PowerShell)
 echo '{"jsonrpc":"2.0","id":1,"method":"ping","params":{}}' | & "C:\Users\Jorge López\.dotnet10\dotnet" run --project src/ClaudeMcpServer.Host/
 
-# Publish self-contained binary (Windows)
-& "C:\Users\Jorge López\.dotnet10\dotnet" publish src/ClaudeMcpServer.Host/ -c Release -r win-x64 --self-contained -o ./publish/win-x64
+# Publish self-contained binary for Claude Desktop on Windows (path must have no spaces or accented chars)
+& "C:\Users\Jorge López\.dotnet10\dotnet" publish "C:\Users\Jorge López\OneDrive\Desktop\MCP mac\src\ClaudeMcpServer.Host\ClaudeMcpServer.Host.csproj" -c Release -r win-x64 --self-contained -o "C:\ClaudeMCP"
 
 # Publish for macOS Apple Silicon
 & "C:\Users\Jorge López\.dotnet10\dotnet" publish src/ClaudeMcpServer.Host/ -c Release -r osx-arm64 --self-contained -o ./publish/osx-arm64
@@ -60,6 +60,11 @@ The four email tools (`list_emails`, `read_email`, `search_emails`, `send_email`
 
 The `appsettings.json` in the repo contains a placeholder. Set the real password locally only; do not commit it.
 
+After setting the real password, run this once to prevent accidental commits:
+```powershell
+git update-index --assume-unchanged src/ClaudeMcpServer.Host/appsettings.json
+```
+
 ## Claude Desktop Config (Windows)
 
 `%APPDATA%\Claude\claude_desktop_config.json`:
@@ -68,7 +73,7 @@ The `appsettings.json` in the repo contains a placeholder. Set the real password
 {
   "mcpServers": {
     "claude-mcp-server": {
-      "command": "C:\\Users\\Jorge López\\OneDrive\\Desktop\\MCP mac\\publish\\win-x64\\ClaudeMcpServer.Host.exe",
+      "command": "C:\\ClaudeMCP\\ClaudeMcpServer.Host.exe",
       "args": [],
       "env": {}
     }
