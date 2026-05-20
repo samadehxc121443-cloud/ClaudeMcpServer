@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "claude-mcp-server": {
+      "command": "/Users/YOUR_USERNAME/path/to/ClaudeMcpServer/publish/osx-arm64/ClaudeMcpServer.Host",
+      "args": [],
+      "env": {}
+    }
+  }
+}
