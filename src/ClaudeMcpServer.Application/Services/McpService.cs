@@ -61,6 +61,15 @@ public sealed class McpService
 
             _logger.LogDebug("Received method: {Method}", request.Method);
 
+            // Notifications (no id) must not receive any response per JSON-RPC 2.0 spec
+            bool isNotification = request.Id is null;
+
+            if (isNotification)
+            {
+                _logger.LogDebug("Ignoring notification: {Method}", request.Method);
+                continue;
+            }
+
             McpResponse response;
             if (handlerMap.TryGetValue(request.Method, out var handler))
             {
