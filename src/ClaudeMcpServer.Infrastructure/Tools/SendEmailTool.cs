@@ -11,7 +11,11 @@ using Microsoft.Extensions.Options;
 
 namespace ClaudeMcpServer.Infrastructure.Tools;
 
-/// <summary>Sends an email from the configured iCloud account via SMTP.</summary>
+/// <summary>
+/// Sends an email from the configured iCloud account via SMTP.
+/// Supports plain text, HTML with plain-text fallback (multipart/alternative),
+/// CC recipients, and file attachments (multipart/mixed).
+/// </summary>
 public sealed class SendEmailTool : IToolHandler
 {
     private readonly EmailSettings _settings;
@@ -25,7 +29,7 @@ public sealed class SendEmailTool : IToolHandler
     /// <inheritdoc/>
     public ToolDefinition GetDefinition() => new(
         ToolName,
-        "Sends an email from the configured iCloud account. Supports plain text and optional CC.",
+        "Sends an email from the configured iCloud account. Supports plain text or HTML with professional formatting, optional CC recipients, and file attachments.",
         new JsonObject
         {
             ["type"] = "object",
@@ -44,12 +48,23 @@ public sealed class SendEmailTool : IToolHandler
                 ["body"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "Plain text body of the email."
+                    ["description"] = "Plain text body. Used as fallback when html_body is also provided."
+                },
+                ["html_body"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["description"] = "Optional HTML body for professional formatting. When provided, creates a multipart/alternative message so clients that don't support HTML receive the plain text fallback."
                 },
                 ["cc"] = new JsonObject
                 {
                     ["type"] = "string",
                     ["description"] = "Optional CC email address."
+                },
+                ["attachments"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                    ["description"] = "Optional list of absolute file paths to attach to the email."
                 }
             },
             ["required"] = new JsonArray { "to", "subject", "body" }
@@ -75,11 +90,20 @@ public sealed class SendEmailTool : IToolHandler
         if (string.IsNullOrWhiteSpace(to) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
             return ToolResult.Error("Parameters 'to', 'subject', and 'body' must not be empty.");
 
+        var htmlBody = parameters.TryGetProperty("html_body", out var htmlProp)
+            ? htmlProp.GetString()
+            : null;
+
+        var attachmentPaths = parameters.TryGetProperty("attachments", out var attProp)
+            ? attProp.EnumerateArray().Select(e => e.GetString()).Where(p => !string.IsNullOrWhiteSpace(p)).ToList()
+            : [];
+
         try
         {
             var message = new MimeMessage();
             message.From.Add(new MailboxAddress(_settings.DisplayName, _settings.Username));
             message.To.Add(MailboxAddress.Parse(to));
+            message.Subject = subject;
 
             if (parameters.TryGetProperty("cc", out var ccProp))
             {
@@ -88,8 +112,39 @@ public sealed class SendEmailTool : IToolHandler
                     message.Cc.Add(MailboxAddress.Parse(cc));
             }
 
-            message.Subject = subject;
-            message.Body = new TextPart("plain") { Text = body };
+            // Build body: plain text only, or multipart/alternative when HTML is provided
+            MimeEntity bodyEntity = string.IsNullOrWhiteSpace(htmlBody)
+                ? new TextPart("plain") { Text = body }
+                : new MultipartAlternative
+                {
+                    new TextPart("plain") { Text = body },
+                    new TextPart("html")  { Text = htmlBody }
+                };
+
+            // Wrap in multipart/mixed when attachments are present
+            if (attachmentPaths.Count > 0)
+            {
+                var mixed = new Multipart("mixed") { bodyEntity };
+                foreach (var path in attachmentPaths)
+                {
+                    if (!File.Exists(path))
+                        return ToolResult.Error($"Attachment not found: {path}");
+
+                    var attachment = new MimePart(MimeTypes.GetMimeType(path))
+                    {
+                        Content = new MimeContent(File.OpenRead(path)),
+                        ContentDisposition = new ContentDisposition(ContentDisposition.Attachment),
+                        ContentTransferEncoding = ContentEncoding.Base64,
+                        FileName = Path.GetFileName(path)
+                    };
+                    mixed.Add(attachment);
+                }
+                message.Body = mixed;
+            }
+            else
+            {
+                message.Body = bodyEntity;
+            }
 
             using var smtp = new SmtpClient();
             await smtp.ConnectAsync(_settings.SmtpHost, _settings.SmtpPort, SecureSocketOptions.StartTls, ct);
@@ -97,7 +152,13 @@ public sealed class SendEmailTool : IToolHandler
             await smtp.SendAsync(message, ct);
             await smtp.DisconnectAsync(true, ct);
 
-            return ToolResult.Success($"Email sent successfully to {to}.");
+            var summary = $"Email sent to {to}";
+            if (attachmentPaths.Count > 0)
+                summary += $" with {attachmentPaths.Count} attachment(s)";
+            if (!string.IsNullOrWhiteSpace(htmlBody))
+                summary += " (HTML + plain text)";
+
+            return ToolResult.Success($"{summary}.");
         }
         catch (Exception ex)
         {
