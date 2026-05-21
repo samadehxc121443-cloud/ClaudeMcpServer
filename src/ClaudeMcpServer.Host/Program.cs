@@ -2,6 +2,7 @@ using ClaudeMcpServer.Application.Handlers;
 using ClaudeMcpServer.Application.Services;
 using ClaudeMcpServer.Domain.Interfaces;
 using ClaudeMcpServer.Infrastructure.Configuration;
+using ClaudeMcpServer.Infrastructure.License;
 using ClaudeMcpServer.Infrastructure.Registry;
 using ClaudeMcpServer.Infrastructure.Tools;
 using ClaudeMcpServer.Infrastructure.Transport;
@@ -27,6 +28,12 @@ var host = Host.CreateDefaultBuilder(args)
 
         // Tool registry — discovers all IToolHandler registrations automatically
         services.AddSingleton<IToolRegistry, ToolRegistry>();
+
+        // License validation — HttpClient calls a remote server to validate the API key.
+        // When License:ServerUrl is empty the server runs in dev mode and skips validation.
+        services.Configure<LicenseSettings>(context.Configuration.GetSection("License"));
+        services.AddHttpClient<LicenseService>();
+        services.AddSingleton<ILicenseService, LicenseService>();
 
         // Email settings — bound from appsettings.json "Email" section
         services.Configure<EmailSettings>(context.Configuration.GetSection("Email"));
@@ -67,12 +74,17 @@ await host.RunAsync();
 internal sealed class McpHostedService : BackgroundService
 {
     private readonly McpService _mcpService;
+    private readonly ILicenseService _license;
     private readonly ILogger<McpHostedService> _logger;
 
     /// <summary>Initializes a new instance of <see cref="McpHostedService"/>.</summary>
-    public McpHostedService(McpService mcpService, ILogger<McpHostedService> logger)
+    public McpHostedService(
+        McpService mcpService,
+        ILicenseService license,
+        ILogger<McpHostedService> logger)
     {
         _mcpService = mcpService;
+        _license = license;
         _logger = logger;
     }
 
@@ -80,6 +92,16 @@ internal sealed class McpHostedService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("ClaudeMcpServer starting — listening on stdio");
+
+        var licenseResult = await _license.ValidateAsync(stoppingToken);
+        if (!licenseResult.IsValid)
+        {
+            _logger.LogCritical("License validation failed: {Message}", licenseResult.Message);
+            return;
+        }
+
+        _logger.LogInformation("License OK — {Message}", licenseResult.Message);
+
         try
         {
             await _mcpService.RunAsync(stoppingToken);
