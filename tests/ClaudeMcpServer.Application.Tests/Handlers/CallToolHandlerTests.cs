@@ -29,12 +29,18 @@ public class CallToolHandlerTests
         public IToolHandler? GetByName(string name) => _handlers.FirstOrDefault(h => h.ToolName == name);
     }
 
+    private sealed class ValidLicense : ILicenseService
+    {
+        public Task<LicenseResult> ValidateAsync(CancellationToken ct) =>
+            Task.FromResult(LicenseResult.Valid("test"));
+    }
+
     /// <summary>Verifies the handler dispatches to the correct tool and returns a result.</summary>
     [Fact]
     public async Task HandleAsync_Dispatches_To_Correct_Tool()
     {
         var registry = new FakeRegistry(new EchoTool());
-        var handler = new CallToolHandler(registry, NullLogger<CallToolHandler>.Instance);
+        var handler = new CallToolHandler(registry, new ValidLicense(), NullLogger<CallToolHandler>.Instance);
 
         var paramsJson = JsonSerializer.Serialize(new { name = "echo", arguments = new { } });
         var request = new McpRequest
@@ -55,7 +61,7 @@ public class CallToolHandlerTests
     public async Task HandleAsync_Returns_Error_For_Unknown_Tool()
     {
         var registry = new FakeRegistry();
-        var handler = new CallToolHandler(registry, NullLogger<CallToolHandler>.Instance);
+        var handler = new CallToolHandler(registry, new ValidLicense(), NullLogger<CallToolHandler>.Instance);
 
         var paramsJson = JsonSerializer.Serialize(new { name = "nonexistent", arguments = new { } });
         var request = new McpRequest

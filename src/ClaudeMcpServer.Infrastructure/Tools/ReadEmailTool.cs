@@ -76,7 +76,7 @@ public sealed class ReadEmailTool : IToolHandler
         }
         catch (Exception ex)
         {
-            return ToolResult.Error($"Failed to read email {uid}: {ex.Message}");
+            return EmailExceptionHelper.Handle(ex, $"Failed to read email {uid}");
         }
     }
 }

@@ -129,7 +129,7 @@ public sealed class GetEmailAttachmentsTool : IToolHandler
         }
         catch (Exception ex)
         {
-            return ToolResult.Error($"Failed to get attachments for email {uid}: {ex.Message}");
+            return EmailExceptionHelper.Handle(ex, $"Failed to get attachments for email {uid}");
         }
     }
 }

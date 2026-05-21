@@ -95,7 +95,7 @@ public sealed class ListEmailsTool : IToolHandler
         }
         catch (Exception ex)
         {
-            return ToolResult.Error($"Failed to list emails: {ex.Message}");
+            return EmailExceptionHelper.Handle(ex, "Failed to list emails");
         }
     }
 }

@@ -53,6 +53,11 @@ appsettings.Production.json
 # Publish output
 publish/
 
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
 # Test results
 TestResults/
 coverage/

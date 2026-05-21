@@ -133,7 +133,7 @@ public sealed class SearchEmailsTool : IToolHandler
         }
         catch (Exception ex)
         {
-            return ToolResult.Error($"Search failed: {ex.Message}");
+            return EmailExceptionHelper.Handle(ex, "Search failed");
         }
     }
 }

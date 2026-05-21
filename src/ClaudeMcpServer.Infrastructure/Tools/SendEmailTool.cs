@@ -29,7 +29,7 @@ public sealed class SendEmailTool : IToolHandler
     /// <inheritdoc/>
     public ToolDefinition GetDefinition() => new(
         ToolName,
-        "Sends an email from the configured iCloud account. Supports plain text or HTML with professional formatting, optional CC recipients, and file attachments.",
+        "Sends an email from the configured iCloud account via SMTP. Supports plain text or HTML with professional formatting, optional CC recipients, and file attachments. IMPORTANT: use the exact parameter names defined below — do not substitute 'html' for 'html_body' or 'attachment_path' for 'attachments'.",
         new JsonObject
         {
             ["type"] = "object",
@@ -38,7 +38,7 @@ public sealed class SendEmailTool : IToolHandler
                 ["to"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "Recipient email address."
+                    ["description"] = "Recipient email address (e.g. 'user@example.com')."
                 },
                 ["subject"] = new JsonObject
                 {
@@ -48,23 +48,24 @@ public sealed class SendEmailTool : IToolHandler
                 ["body"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "Plain text body. Used as fallback when html_body is also provided."
+                    ["description"] = "Plain text body. Always required. Used as fallback for email clients that do not render HTML when html_body is also provided."
                 },
                 ["html_body"] = new JsonObject
                 {
                     ["type"] = "string",
-                    ["description"] = "Optional HTML body for professional formatting. When provided, creates a multipart/alternative message so clients that don't support HTML receive the plain text fallback."
+                    ["description"] = "EXACT KEY: 'html_body' (not 'html', not 'htmlBody'). Optional full HTML document for professional formatting. When provided alongside 'body', creates a multipart/alternative message. Example value: '<!DOCTYPE html><html>...</html>'."
                 },
                 ["cc"] = new JsonObject
                 {
-                    ["type"] = "string",
-                    ["description"] = "Optional CC email address."
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                    ["description"] = "EXACT KEY: 'cc' (not 'cc_list', not 'carbon_copy'). Optional array of CC email addresses. One recipient: [\"a@x.com\"]. Multiple: [\"a@x.com\",\"b@y.com\"]. Pass an empty array [] to send no copies."
                 },
                 ["attachments"] = new JsonObject
                 {
                     ["type"] = "array",
                     ["items"] = new JsonObject { ["type"] = "string" },
-                    ["description"] = "Optional list of absolute file paths to attach to the email."
+                    ["description"] = "EXACT KEY: 'attachments' (not 'attachment_path', not 'attachment'). Optional array of absolute file paths on the server. On Windows use double backslashes: ['C:\\\\temp\\\\file.xlsx']. On macOS use forward slashes: ['/tmp/file.xlsx']. The file must exist on the server at the given path."
                 }
             },
             ["required"] = new JsonArray { "to", "subject", "body" }
@@ -105,11 +106,14 @@ public sealed class SendEmailTool : IToolHandler
             message.To.Add(MailboxAddress.Parse(to));
             message.Subject = subject;
 
-            if (parameters.TryGetProperty("cc", out var ccProp))
+            if (parameters.TryGetProperty("cc", out var ccProp) && ccProp.ValueKind == JsonValueKind.Array)
             {
-                var cc = ccProp.GetString();
-                if (!string.IsNullOrWhiteSpace(cc))
-                    message.Cc.Add(MailboxAddress.Parse(cc));
+                foreach (var ccEntry in ccProp.EnumerateArray())
+                {
+                    var ccAddr = ccEntry.GetString();
+                    if (!string.IsNullOrWhiteSpace(ccAddr))
+                        message.Cc.Add(MailboxAddress.Parse(ccAddr));
+                }
             }
 
             // Build body: plain text only, or multipart/alternative when HTML is provided
@@ -162,7 +166,7 @@ public sealed class SendEmailTool : IToolHandler
         }
         catch (Exception ex)
         {
-            return ToolResult.Error($"Failed to send email: {ex.Message}");
+            return EmailExceptionHelper.Handle(ex, "Failed to send email");
         }
     }
 }

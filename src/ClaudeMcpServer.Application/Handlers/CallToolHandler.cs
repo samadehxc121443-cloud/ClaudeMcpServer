@@ -14,6 +14,7 @@ namespace ClaudeMcpServer.Application.Handlers;
 public sealed class CallToolHandler : IMcpRequestHandler
 {
     private readonly IToolRegistry _registry;
+    private readonly ILicenseService _license;
     private readonly ILogger<CallToolHandler> _logger;
 
     private static readonly JsonSerializerOptions DeserializeOptions = new()
@@ -22,9 +23,10 @@ public sealed class CallToolHandler : IMcpRequestHandler
     };
 
     /// <summary>Initializes a new instance of <see cref="CallToolHandler"/>.</summary>
-    public CallToolHandler(IToolRegistry registry, ILogger<CallToolHandler> logger)
+    public CallToolHandler(IToolRegistry registry, ILicenseService license, ILogger<CallToolHandler> logger)
     {
         _registry = registry;
+        _license = license;
         _logger = logger;
     }
 
@@ -34,6 +36,14 @@ public sealed class CallToolHandler : IMcpRequestHandler
     /// <inheritdoc/>
     public async Task<object?> HandleAsync(McpRequest request, CancellationToken ct)
     {
+        // Validate on every request so revocations take effect immediately on the next call.
+        var licenseResult = await _license.ValidateAsync(ct);
+        if (!licenseResult.IsValid)
+        {
+            _logger.LogWarning("Tool call rejected — license invalid: {Reason}", licenseResult.Message);
+            return ErrorResult($"Service unavailable: {licenseResult.Message}");
+        }
+
         if (request.Params is not { } paramsElement)
             return ErrorResult("Missing params in tools/call request");
 

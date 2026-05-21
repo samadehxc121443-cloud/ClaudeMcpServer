@@ -12,4 +12,11 @@ public sealed class LicenseSettings
 
     /// <summary>Gets the API key that identifies this client installation.</summary>
     public string ApiKey { get; init; } = string.Empty;
+
+    /// <summary>
+    /// When true, skips all license validation and runs in development mode.
+    /// Must be explicitly set — an empty ServerUrl alone no longer enables dev mode.
+    /// Set to false in all production deployments.
+    /// </summary>
+    public bool DevMode { get; init; } = false;
 }

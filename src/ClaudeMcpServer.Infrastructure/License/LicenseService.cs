@@ -31,10 +31,16 @@ public sealed class LicenseService : ILicenseService
     /// <inheritdoc/>
     public async Task<LicenseResult> ValidateAsync(CancellationToken ct)
     {
+        if (_settings.DevMode)
+        {
+            _logger.LogWarning("License:DevMode is true — skipping validation. Disable this in production.");
+            return LicenseResult.DevMode();
+        }
+
         if (string.IsNullOrWhiteSpace(_settings.ServerUrl))
         {
-            _logger.LogWarning("No license server configured — running in dev mode");
-            return LicenseResult.DevMode();
+            _logger.LogCritical("License:ServerUrl is not configured — the server cannot operate without a license server");
+            return LicenseResult.Invalid("License:ServerUrl must be configured. The MCP server cannot operate without a license server.");
         }
 
         if (string.IsNullOrWhiteSpace(_settings.ApiKey))
