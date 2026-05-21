@@ -5,18 +5,13 @@ ENV ASPNETCORE_URLS=http://+:8080
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
-COPY ["ClaudeMcpServer.LicenseServer.csproj", "."]
-RUN dotnet restore
+COPY ["src/ClaudeMcpServer.LicenseServer/ClaudeMcpServer.LicenseServer.csproj", "src/ClaudeMcpServer.LicenseServer/"]
+RUN dotnet restore "src/ClaudeMcpServer.LicenseServer/ClaudeMcpServer.LicenseServer.csproj"
 COPY . .
-RUN dotnet publish -c Release -o /app/publish --no-restore
+RUN dotnet publish "src/ClaudeMcpServer.LicenseServer/ClaudeMcpServer.LicenseServer.csproj" -c Release -o /app/publish
 
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-
-# Persist the SQLite database across restarts via a mounted volume.
-# On Railway/Render: mount a volume at /app/data and set:
-#   ConnectionStrings__DefaultConnection=Data Source=/app/data/licenses.db
 VOLUME ["/app/data"]
-
 ENTRYPOINT ["dotnet", "ClaudeMcpServer.LicenseServer.dll"]
