@@ -121,8 +121,14 @@ static async ValueTask<object?> AdminKeyFilter(EndpointFilterInvocationContext c
     if (string.IsNullOrWhiteSpace(expected))
         return Results.Problem("AdminKey is not configured on the server.", statusCode: 500);
 
-    if (!ctx.HttpContext.Request.Headers.TryGetValue("X-Admin-Key", out var provided) ||
-        provided.ToString().Trim() != expected.Trim())
+    // Support both X-Admin-Key and Authorization: Bearer <key>
+    string? providedKey = null;
+    if (ctx.HttpContext.Request.Headers.TryGetValue("X-Admin-Key", out var xKey))
+        providedKey = xKey.ToString().Trim();
+    else if (ctx.HttpContext.Request.Headers.TryGetValue("Authorization", out var auth))
+        providedKey = auth.ToString().Trim().Replace("Bearer ", "", StringComparison.OrdinalIgnoreCase);
+
+    if (providedKey != expected.Trim())
     {
         return Results.Json(new { error = "Unauthorized." }, statusCode: 401);
     }
