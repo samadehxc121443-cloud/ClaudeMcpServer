@@ -5,38 +5,23 @@ using Microsoft.EntityFrameworkCore;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<LicenseDbContext>(opts =>
-    opts.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection") ?? "Data Source=licenses.db"));
+{
+    // Railway injects DATABASE_URL as a PostgreSQL URI (postgresql://user:pass@host/db).
+    // Fall back to ConnectionStrings:DefaultConnection for local development.
+    var connectionString =
+        builder.Configuration["DATABASE_URL"] ??
+        builder.Configuration.GetConnectionString("DefaultConnection") ??
+        throw new InvalidOperationException("No database connection string configured.");
+    opts.UseNpgsql(connectionString);
+});
 
 var app = builder.Build();
 
-// Auto-migrate on startup so the DB is always up to date without manual steps.
+// Apply pending EF Core migrations on startup — creates the DB if it doesn't exist.
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<LicenseDbContext>();
-    var dataSource = db.Database.GetDbConnection().DataSource;
-    if (!string.IsNullOrWhiteSpace(dataSource))
-        Directory.CreateDirectory(Path.GetDirectoryName(dataSource)!);
-    db.Database.EnsureCreated();
-
-    // Add columns that didn't exist in the initial schema (SQLite doesn't support IF NOT EXISTS on ALTER TABLE).
-    foreach (var sql in new[]
-    {
-        "ALTER TABLE LicenseKeys ADD COLUMN PlanName TEXT",
-        "ALTER TABLE LicenseKeys ADD COLUMN ExpiresAt TEXT"
-    })
-    {
-        try { db.Database.ExecuteSqlRaw(sql); } catch { /* column already exists */ }
-    }
-
-    // Create SessionTokens table for rotating auth (idempotent).
-    db.Database.ExecuteSqlRaw(@"
-        CREATE TABLE IF NOT EXISTS SessionTokens (
-            Id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            Token     TEXT    NOT NULL UNIQUE,
-            ClientName TEXT   NOT NULL,
-            IssuedAt  TEXT    NOT NULL,
-            ExpiresAt TEXT    NOT NULL
-        )");
+    db.Database.Migrate();
 }
 
 // ──────────────────────────────────────────────
