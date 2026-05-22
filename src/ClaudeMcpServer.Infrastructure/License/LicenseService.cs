@@ -9,13 +9,19 @@ namespace ClaudeMcpServer.Infrastructure.License;
 
 /// <summary>
 /// Validates the API key against a remote license server via HTTP.
-/// The MCP server remains stdio-based; this is an outbound call made on startup.
+/// After the first successful exchange the session token is cached in memory for ~1 hour,
+/// so subsequent tool calls are free (no network round-trip).
 /// </summary>
 public sealed class LicenseService : ILicenseService
 {
     private readonly LicenseSettings _settings;
     private readonly HttpClient _http;
     private readonly ILogger<LicenseService> _logger;
+
+    // In-memory token cache — avoids a network call on every tools/call.
+    private readonly SemaphoreSlim _lock = new(1, 1);
+    private string? _cachedClientName;
+    private DateTime _tokenExpiry = DateTime.MinValue;
 
     /// <summary>Initializes a new instance of <see cref="LicenseService"/>.</summary>
     public LicenseService(
@@ -39,45 +45,64 @@ public sealed class LicenseService : ILicenseService
 
         if (string.IsNullOrWhiteSpace(_settings.ServerUrl))
         {
-            _logger.LogCritical("License:ServerUrl is not configured — the server cannot operate without a license server");
+            _logger.LogCritical("License:ServerUrl is not configured.");
             return LicenseResult.Invalid("License:ServerUrl must be configured. The MCP server cannot operate without a license server.");
         }
 
         if (string.IsNullOrWhiteSpace(_settings.ApiKey))
         {
-            _logger.LogError("License server URL is set but ApiKey is missing");
+            _logger.LogError("License server URL is set but ApiKey is missing.");
             return LicenseResult.Invalid("ApiKey is required when LicenseServerUrl is configured.");
         }
 
+        // Fast path: cached token is still valid with > 5 min remaining.
+        if (_cachedClientName is not null && DateTime.UtcNow < _tokenExpiry.AddMinutes(-5))
+            return LicenseResult.Valid(_cachedClientName);
+
+        // Slow path: acquire lock to prevent multiple concurrent token exchanges.
+        await _lock.WaitAsync(ct);
         try
         {
-            _logger.LogInformation("Validating license with {ServerUrl}", _settings.ServerUrl);
+            // Double-check after acquiring the lock — another thread may have refreshed.
+            if (_cachedClientName is not null && DateTime.UtcNow < _tokenExpiry.AddMinutes(-5))
+                return LicenseResult.Valid(_cachedClientName);
 
-            var endpoint = $"{_settings.ServerUrl.TrimEnd('/')}/api/license/validate";
-            var response = await _http.PostAsJsonAsync(
-                endpoint,
-                new { apiKey = _settings.ApiKey },
-                ct);
+            return await ExchangeTokenAsync(ct);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    private async Task<LicenseResult> ExchangeTokenAsync(CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Exchanging API key for session token with {ServerUrl}", _settings.ServerUrl);
+
+            var endpoint = $"{_settings.ServerUrl.TrimEnd('/')}/api/auth/token";
+            var response = await _http.PostAsJsonAsync(endpoint, new { apiKey = _settings.ApiKey }, ct);
 
             if (!response.IsSuccessStatusCode)
             {
                 var body = await response.Content.ReadAsStringAsync(ct);
-                _logger.LogError("License server returned {StatusCode}: {Body}", response.StatusCode, body);
-                return LicenseResult.Invalid($"License server rejected the request ({(int)response.StatusCode}).");
+                _logger.LogWarning("Token exchange failed ({StatusCode}): {Body}", response.StatusCode, body);
+
+                // Parse the error message from the server response if possible.
+                var err = await TryParseError(body);
+                return LicenseResult.Invalid(err ?? $"License server rejected the request ({(int)response.StatusCode}).");
             }
 
-            var result = await response.Content.ReadFromJsonAsync<LicenseResponse>(ct);
-            if (result is null)
-                return LicenseResult.Invalid("License server returned an empty response.");
+            var result = await response.Content.ReadFromJsonAsync<TokenResponse>(ct);
+            if (result?.Token is null)
+                return LicenseResult.Invalid("License server returned an empty token response.");
 
-            if (!result.Valid)
-            {
-                _logger.LogWarning("License invalid: {Reason}", result.Message);
-                return LicenseResult.Invalid(result.Message ?? "License is not active.");
-            }
+            _cachedClientName = result.ClientName ?? "unknown";
+            _tokenExpiry = result.ExpiresAt ?? DateTime.UtcNow.AddHours(1);
 
-            _logger.LogInformation("License valid for client: {ClientName}", result.ClientName);
-            return LicenseResult.Valid(result.ClientName ?? "unknown");
+            _logger.LogInformation("Session token issued for {ClientName}, valid until {Expiry:u}", _cachedClientName, _tokenExpiry);
+            return LicenseResult.Valid(_cachedClientName);
         }
         catch (HttpRequestException ex)
         {
@@ -90,9 +115,20 @@ public sealed class LicenseService : ILicenseService
         }
     }
 
-    /// <summary>JSON contract for the license server response.</summary>
-    private sealed record LicenseResponse(
-        [property: JsonPropertyName("valid")]      bool   Valid,
-        [property: JsonPropertyName("clientName")] string? ClientName,
-        [property: JsonPropertyName("message")]    string? Message);
+    private static async Task<string?> TryParseError(string body)
+    {
+        try
+        {
+            var doc = System.Text.Json.JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("error", out var err))
+                return err.GetString();
+        }
+        catch { /* ignore parse errors */ }
+        return null;
+    }
+
+    private sealed record TokenResponse(
+        [property: JsonPropertyName("token")]      string?   Token,
+        [property: JsonPropertyName("clientName")] string?   ClientName,
+        [property: JsonPropertyName("expiresAt")]  DateTime? ExpiresAt);
 }

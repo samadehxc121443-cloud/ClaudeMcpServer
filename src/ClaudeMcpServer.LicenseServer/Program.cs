@@ -27,6 +27,16 @@ using (var scope = app.Services.CreateScope())
     {
         try { db.Database.ExecuteSqlRaw(sql); } catch { /* column already exists */ }
     }
+
+    // Create SessionTokens table for rotating auth (idempotent).
+    db.Database.ExecuteSqlRaw(@"
+        CREATE TABLE IF NOT EXISTS SessionTokens (
+            Id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            Token     TEXT    NOT NULL UNIQUE,
+            ClientName TEXT   NOT NULL,
+            IssuedAt  TEXT    NOT NULL,
+            ExpiresAt TEXT    NOT NULL
+        )");
 }
 
 // ──────────────────────────────────────────────
@@ -54,6 +64,46 @@ app.MapPost("/api/license/validate", async (ValidateRequest req, LicenseDbContex
     await db.SaveChangesAsync();
 
     return Results.Ok(new { valid = true, clientName = entry.ClientName, message = (string?)null });
+});
+
+// ──────────────────────────────────────────────
+//  Token exchange — MCP clients call this once per hour instead of
+//  sending their long-lived API key on every request.
+// ──────────────────────────────────────────────
+
+app.MapPost("/api/auth/token", async (ValidateRequest req, LicenseDbContext db) =>
+{
+    if (string.IsNullOrWhiteSpace(req.ApiKey))
+        return Results.BadRequest(new { error = "apiKey is required." });
+
+    var entry = await db.LicenseKeys.FirstOrDefaultAsync(k => k.Key == req.ApiKey);
+
+    if (entry is null)
+        return Results.Json(new { error = "License key not found." }, statusCode: 401);
+
+    if (!entry.IsActive)
+        return Results.Json(new { error = "License key has been revoked." }, statusCode: 401);
+
+    if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
+        return Results.Json(new { error = $"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}." }, statusCode: 401);
+
+    // Prune expired tokens for this client to keep the table lean.
+    var expired = db.SessionTokens.Where(t => t.ClientName == entry.ClientName && t.ExpiresAt < DateTime.UtcNow);
+    db.SessionTokens.RemoveRange(expired);
+
+    var session = new SessionToken
+    {
+        Token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"), // 64 hex chars
+        ClientName = entry.ClientName,
+        IssuedAt = DateTime.UtcNow,
+        ExpiresAt = DateTime.UtcNow.AddHours(1)
+    };
+
+    db.SessionTokens.Add(session);
+    entry.LastValidatedAt = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new { token = session.Token, clientName = session.ClientName, expiresAt = session.ExpiresAt });
 });
 
 // ──────────────────────────────────────────────
