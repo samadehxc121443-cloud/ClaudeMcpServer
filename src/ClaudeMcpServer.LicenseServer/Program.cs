@@ -17,6 +17,16 @@ using (var scope = app.Services.CreateScope())
     if (!string.IsNullOrWhiteSpace(dataSource))
         Directory.CreateDirectory(Path.GetDirectoryName(dataSource)!);
     db.Database.EnsureCreated();
+
+    // Add columns that didn't exist in the initial schema (SQLite doesn't support IF NOT EXISTS on ALTER TABLE).
+    foreach (var sql in new[]
+    {
+        "ALTER TABLE LicenseKeys ADD COLUMN PlanName TEXT",
+        "ALTER TABLE LicenseKeys ADD COLUMN ExpiresAt TEXT"
+    })
+    {
+        try { db.Database.ExecuteSqlRaw(sql); } catch { /* column already exists */ }
+    }
 }
 
 // ──────────────────────────────────────────────
@@ -36,6 +46,9 @@ app.MapPost("/api/license/validate", async (ValidateRequest req, LicenseDbContex
 
     if (!entry.IsActive)
         return Results.Ok(new { valid = false, clientName = entry.ClientName, message = "License key has been revoked." });
+
+    if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
+        return Results.Ok(new { valid = false, clientName = entry.ClientName, message = $"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}." });
 
     entry.LastValidatedAt = DateTime.UtcNow;
     await db.SaveChangesAsync();
@@ -59,8 +72,10 @@ admin.MapGet("/keys", async (LicenseDbContext db) =>
             k.Key,
             k.ClientName,
             k.Notes,
+            k.PlanName,
             k.IsActive,
             k.CreatedAt,
+            k.ExpiresAt,
             k.LastValidatedAt
         })
         .ToListAsync();
@@ -73,13 +88,18 @@ admin.MapPost("/keys", async (CreateKeyRequest req, LicenseDbContext db) =>
     if (string.IsNullOrWhiteSpace(req.ClientName))
         return Results.BadRequest(new { error = "clientName is required." });
 
+    DateTime? expiresAt = req.ExpiresAt
+        ?? (req.DurationDays.HasValue ? DateTime.UtcNow.AddDays(req.DurationDays.Value) : null);
+
     var entry = new LicenseKey
     {
         Key = Guid.NewGuid().ToString("N"),
         ClientName = req.ClientName.Trim(),
         Notes = req.Notes?.Trim(),
+        PlanName = req.PlanName?.Trim(),
         IsActive = true,
-        CreatedAt = DateTime.UtcNow
+        CreatedAt = DateTime.UtcNow,
+        ExpiresAt = expiresAt
     };
 
     db.LicenseKeys.Add(entry);
@@ -91,8 +111,10 @@ admin.MapPost("/keys", async (CreateKeyRequest req, LicenseDbContext db) =>
         entry.Key,
         entry.ClientName,
         entry.Notes,
+        entry.PlanName,
         entry.IsActive,
-        entry.CreatedAt
+        entry.CreatedAt,
+        entry.ExpiresAt
     });
 });
 
@@ -141,4 +163,4 @@ static async ValueTask<object?> AdminKeyFilter(EndpointFilterInvocationContext c
 // ──────────────────────────────────────────────
 
 record ValidateRequest(string ApiKey);
-record CreateKeyRequest(string ClientName, string? Notes);
+record CreateKeyRequest(string ClientName, string? Notes, string? PlanName, DateTime? ExpiresAt, int? DurationDays);

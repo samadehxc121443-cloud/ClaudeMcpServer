@@ -6,7 +6,9 @@ public sealed class LicenseKey
     public string Key { get; set; } = string.Empty;
     public string ClientName { get; set; } = string.Empty;
     public string? Notes { get; set; }
+    public string? PlanName { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ExpiresAt { get; set; }
     public DateTime? LastValidatedAt { get; set; }
 }
