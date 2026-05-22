@@ -13,5 +13,4 @@ RUN dotnet publish "src/ClaudeMcpServer.LicenseServer/ClaudeMcpServer.LicenseSer
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-VOLUME ["/app/data"]
 ENTRYPOINT ["dotnet", "ClaudeMcpServer.LicenseServer.dll"]
