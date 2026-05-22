@@ -6,12 +6,24 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddDbContext<LicenseDbContext>(opts =>
 {
-    // Railway injects DATABASE_URL as a PostgreSQL URI (postgresql://user:pass@host/db).
-    // Fall back to ConnectionStrings:DefaultConnection for local development.
-    var connectionString =
+    var raw =
         builder.Configuration["DATABASE_URL"] ??
         builder.Configuration.GetConnectionString("DefaultConnection") ??
         throw new InvalidOperationException("No database connection string configured.");
+
+    // Railway injects DATABASE_URL as a URI (postgresql://user:pass@host:port/db).
+    // Parse it manually so Npgsql's ADO.NET key-value parser never sees the URI directly.
+    string connectionString = raw;
+    if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
+        raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+    {
+        var uri = new Uri(raw);
+        var parts = uri.UserInfo.Split(':', 2);
+        connectionString = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};" +
+                           $"Username={Uri.UnescapeDataString(parts[0])};Password={Uri.UnescapeDataString(parts[1])};" +
+                           "SSL Mode=Require;Trust Server Certificate=true";
+    }
+
     opts.UseNpgsql(connectionString);
 });
 
