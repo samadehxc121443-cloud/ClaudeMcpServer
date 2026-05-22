@@ -19,6 +19,13 @@ using (var scope = app.Services.CreateScope())
     db.Database.EnsureCreated();
 }
 
+// Temporary diagnostic — remove after confirming auth works
+app.MapGet("/api/debug/auth", (IConfiguration config) =>
+{
+    var key = config["AdminKey"] ?? "";
+    return Results.Ok(new { hasKey = key.Length > 0, length = key.Length, first4 = key.Length >= 4 ? key[..4] : key });
+});
+
 // ──────────────────────────────────────────────
 //  Public endpoint — called by the MCP server on every tools/call
 // ──────────────────────────────────────────────
