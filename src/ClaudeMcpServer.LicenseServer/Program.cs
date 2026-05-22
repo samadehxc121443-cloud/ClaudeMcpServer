@@ -40,6 +40,33 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ──────────────────────────────────────────────
+//  Health check — used by Railway, uptime monitors, and the MCP host
+// ──────────────────────────────────────────────
+
+app.MapGet("/health", async (LicenseDbContext db) =>
+{
+    try
+    {
+        var keyCount = await db.LicenseKeys.CountAsync();
+        return Results.Ok(new
+        {
+            status     = "healthy",
+            keyCount,
+            utc        = DateTime.UtcNow
+        });
+    }
+    catch (Exception ex)
+    {
+        return Results.Json(new
+        {
+            status  = "unhealthy",
+            error   = ex.Message,
+            utc     = DateTime.UtcNow
+        }, statusCode: 503);
+    }
+});
+
+// ──────────────────────────────────────────────
 //  Public endpoint — called by the MCP server on every tools/call
 // ──────────────────────────────────────────────
 
