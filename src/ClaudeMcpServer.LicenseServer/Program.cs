@@ -122,7 +122,7 @@ static async ValueTask<object?> AdminKeyFilter(EndpointFilterInvocationContext c
         return Results.Problem("AdminKey is not configured on the server.", statusCode: 500);
 
     if (!ctx.HttpContext.Request.Headers.TryGetValue("X-Admin-Key", out var provided) ||
-        provided != expected)
+        provided.ToString().Trim() != expected.Trim())
     {
         return Results.Json(new { error = "Unauthorized." }, statusCode: 401);
     }
