@@ -13,6 +13,9 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<LicenseDbContext>();
+    var dataSource = db.Database.GetDbConnection().DataSource;
+    if (!string.IsNullOrWhiteSpace(dataSource))
+        Directory.CreateDirectory(Path.GetDirectoryName(dataSource)!);
     db.Database.EnsureCreated();
 }
 
