@@ -1,8 +1,8 @@
 using ClaudeMcpServer.LicenseServer.Data;
 using ClaudeMcpServer.LicenseServer.DTOs;
 using ClaudeMcpServer.LicenseServer.Filters;
-using ClaudeMcpServer.LicenseServer.Models;
 using ClaudeMcpServer.LicenseServer.Repositories;
+using ClaudeMcpServer.LicenseServer.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -15,7 +15,7 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
         throw new InvalidOperationException("No database connection string configured.");
 
     // Railway injects DATABASE_URL as a URI (postgresql://user:pass@host:port/db).
-    // Parse it manually so Npgsql's ADO.NET key-value parser never sees the URI directly.
+    // Parse manually so Npgsql's ADO.NET key-value parser never sees the URI directly.
     string connectionString = raw;
     if (raw.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) ||
         raw.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
@@ -32,6 +32,7 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
 
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
+builder.Services.AddScoped<ILicenseManagerService, LicenseManagerService>();
 
 var app = builder.Build();
 
@@ -41,14 +42,14 @@ using (var scope = app.Services.CreateScope())
     db.Database.Migrate();
 }
 
-// ── Health ──────────────────────────────────────────────────────────────────
+// ── Health ───────────────────────────────────────────────────────────────────
 
-app.MapGet("/health", async (ILicenseKeyRepository repo) =>
+app.MapGet("/health", async (ILicenseManagerService svc) =>
 {
     try
     {
-        var keys = await repo.GetAllAsync();
-        return Results.Ok(new { status = "healthy", keyCount = keys.Count, utc = DateTime.UtcNow });
+        var count = await svc.CountKeysAsync();
+        return Results.Ok(new { status = "healthy", keyCount = count, utc = DateTime.UtcNow });
     }
     catch (Exception ex)
     {
@@ -56,131 +57,58 @@ app.MapGet("/health", async (ILicenseKeyRepository repo) =>
     }
 });
 
-// ── Public ───────────────────────────────────────────────────────────────────
+// ── Public ────────────────────────────────────────────────────────────────────
 
-app.MapPost("/api/license/validate", async (ValidateRequest req, ILicenseKeyRepository repo) =>
+app.MapPost("/api/license/validate", async (ValidateRequest req, ILicenseManagerService svc) =>
 {
     if (string.IsNullOrWhiteSpace(req.ApiKey))
         return Results.BadRequest(new { valid = false, message = "apiKey is required." });
 
-    var entry = await repo.GetByKeyAsync(req.ApiKey);
-
-    if (entry is null)
-        return Results.Ok(new { valid = false, clientName = (string?)null, message = "License key not found." });
-
-    if (!entry.IsActive)
-        return Results.Ok(new { valid = false, clientName = entry.ClientName, message = "License key has been revoked." });
-
-    if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
-        return Results.Ok(new { valid = false, clientName = entry.ClientName, message = $"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}." });
-
-    entry.LastValidatedAt = DateTime.UtcNow;
-    await repo.SaveChangesAsync();
-
-    return Results.Ok(new { valid = true, clientName = entry.ClientName, message = (string?)null });
+    var result = await svc.ValidateAsync(req.ApiKey);
+    return Results.Ok(result);
 });
 
-// ── Token exchange ────────────────────────────────────────────────────────────
-
-app.MapPost("/api/auth/token", async (ValidateRequest req, ILicenseKeyRepository licenseRepo, ISessionTokenRepository tokenRepo) =>
+app.MapPost("/api/auth/token", async (ValidateRequest req, ILicenseManagerService svc) =>
 {
     if (string.IsNullOrWhiteSpace(req.ApiKey))
         return Results.BadRequest(new { error = "apiKey is required." });
 
-    var entry = await licenseRepo.GetByKeyAsync(req.ApiKey);
-
-    if (entry is null)
-        return Results.Json(new { error = "License key not found." }, statusCode: 401);
-
-    if (!entry.IsActive)
-        return Results.Json(new { error = "License key has been revoked." }, statusCode: 401);
-
-    if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
-        return Results.Json(new { error = $"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}." }, statusCode: 401);
-
-    await tokenRepo.RemoveExpiredForClientAsync(entry.ClientName);
-
-    var session = new SessionToken
+    try
     {
-        Token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
-        ClientName = entry.ClientName,
-        IssuedAt = DateTime.UtcNow,
-        ExpiresAt = DateTime.UtcNow.AddHours(1)
-    };
-
-    await tokenRepo.AddAsync(session);
-
-    entry.LastValidatedAt = DateTime.UtcNow;
-    await licenseRepo.SaveChangesAsync(); // persists both token + LastValidatedAt (shared DbContext)
-
-    return Results.Ok(new { token = session.Token, clientName = session.ClientName, expiresAt = session.ExpiresAt });
+        var result = await svc.ExchangeTokenAsync(req.ApiKey);
+        return Results.Ok(result);
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 401);
+    }
 });
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 var admin = app.MapGroup("/api/admin").AddEndpointFilter(AdminKeyEndpointFilter.HandleAsync);
 
-admin.MapGet("/keys", async (ILicenseKeyRepository repo) =>
+admin.MapGet("/keys", async (ILicenseManagerService svc) =>
 {
-    var keys = await repo.GetAllAsync();
-    return Results.Ok(keys.Select(k => new
-    {
-        k.Id,
-        k.Key,
-        k.ClientName,
-        k.Notes,
-        k.PlanName,
-        k.IsActive,
-        k.CreatedAt,
-        k.ExpiresAt,
-        k.LastValidatedAt
-    }));
+    var keys = await svc.GetAllKeysAsync();
+    return Results.Ok(keys);
 });
 
-admin.MapPost("/keys", async (CreateKeyRequest req, ILicenseKeyRepository repo) =>
+admin.MapPost("/keys", async (CreateKeyRequest req, ILicenseManagerService svc) =>
 {
     if (string.IsNullOrWhiteSpace(req.ClientName))
         return Results.BadRequest(new { error = "clientName is required." });
 
-    DateTime? expiresAt = req.ExpiresAt
-        ?? (req.DurationDays.HasValue ? DateTime.UtcNow.AddDays(req.DurationDays.Value) : null);
-
-    var entry = new LicenseKey
-    {
-        Key = Guid.NewGuid().ToString("N"),
-        ClientName = req.ClientName.Trim(),
-        Notes = req.Notes?.Trim(),
-        PlanName = req.PlanName?.Trim(),
-        IsActive = true,
-        CreatedAt = DateTime.UtcNow,
-        ExpiresAt = expiresAt
-    };
-
-    await repo.AddAsync(entry);
-    await repo.SaveChangesAsync();
-
-    return Results.Created($"/api/admin/keys/{entry.Id}", new
-    {
-        entry.Id,
-        entry.Key,
-        entry.ClientName,
-        entry.Notes,
-        entry.PlanName,
-        entry.IsActive,
-        entry.CreatedAt,
-        entry.ExpiresAt
-    });
+    var result = await svc.CreateKeyAsync(req);
+    return Results.Created($"/api/admin/keys/{result.Id}", result);
 });
 
-admin.MapDelete("/keys/{id:int}", async (int id, ILicenseKeyRepository repo) =>
+admin.MapDelete("/keys/{id:int}", async (int id, ILicenseManagerService svc) =>
 {
-    var entry = await repo.GetByIdAsync(id);
-    if (entry is null) return Results.NotFound(new { error = $"Key {id} not found." });
-
-    entry.IsActive = false;
-    await repo.SaveChangesAsync();
-
-    return Results.Ok(new { revoked = true, id = entry.Id, clientName = entry.ClientName });
+    var result = await svc.RevokeKeyAsync(id);
+    return result is null
+        ? Results.NotFound(new { error = $"Key {id} not found." })
+        : Results.Ok(result);
 });
 
 app.Run();
