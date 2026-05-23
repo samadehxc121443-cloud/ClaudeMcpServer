@@ -19,7 +19,4 @@ public sealed class LicenseKeyRepository(LicenseDbContext db) : ILicenseKeyRepos
 
     public async Task AddAsync(LicenseKey entity, CancellationToken ct = default) =>
         await db.LicenseKeys.AddAsync(entity, ct);
-
-    public Task SaveChangesAsync(CancellationToken ct = default) =>
-        db.SaveChangesAsync(ct);
 }

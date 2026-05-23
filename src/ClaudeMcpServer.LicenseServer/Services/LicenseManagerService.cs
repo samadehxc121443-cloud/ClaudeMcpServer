@@ -6,7 +6,8 @@ namespace ClaudeMcpServer.LicenseServer.Services;
 
 public sealed class LicenseManagerService(
     ILicenseKeyRepository licenseRepo,
-    ISessionTokenRepository tokenRepo) : ILicenseManagerService
+    ISessionTokenRepository tokenRepo,
+    IUnitOfWork uow) : ILicenseManagerService
 {
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
@@ -22,7 +23,7 @@ public sealed class LicenseManagerService(
             return new ValidateResult(false, entry.ClientName, $"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}.");
 
         entry.LastValidatedAt = DateTime.UtcNow;
-        await licenseRepo.SaveChangesAsync(ct);
+        await uow.CommitAsync(ct);
 
         return new ValidateResult(true, entry.ClientName, null);
     }
@@ -52,7 +53,7 @@ public sealed class LicenseManagerService(
 
         await tokenRepo.AddAsync(session, ct);
         entry.LastValidatedAt = DateTime.UtcNow;
-        await licenseRepo.SaveChangesAsync(ct);
+        await uow.CommitAsync(ct);
 
         return new TokenResult(session.Token, session.ClientName, session.ExpiresAt);
     }
@@ -83,7 +84,7 @@ public sealed class LicenseManagerService(
         };
 
         await licenseRepo.AddAsync(entry, ct);
-        await licenseRepo.SaveChangesAsync(ct);
+        await uow.CommitAsync(ct);
 
         return new CreateKeyResult(
             entry.Id, entry.Key, entry.ClientName, entry.Notes, entry.PlanName,
@@ -96,7 +97,7 @@ public sealed class LicenseManagerService(
         if (entry is null) return null;
 
         entry.IsActive = false;
-        await licenseRepo.SaveChangesAsync(ct);
+        await uow.CommitAsync(ct);
 
         return new RevokeResult(true, entry.Id, entry.ClientName);
     }

@@ -16,7 +16,4 @@ public sealed class SessionTokenRepository(LicenseDbContext db) : ISessionTokenR
             .ToListAsync(ct);
         db.SessionTokens.RemoveRange(expired);
     }
-
-    public Task SaveChangesAsync(CancellationToken ct = default) =>
-        db.SaveChangesAsync(ct);
 }

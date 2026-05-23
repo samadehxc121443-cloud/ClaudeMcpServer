@@ -32,6 +32,7 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
 
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 builder.Services.AddScoped<ILicenseManagerService, LicenseManagerService>();
 
 var app = builder.Build();
