@@ -97,9 +97,14 @@ public sealed class McpService
             {
                 await _transport.WriteResponseAsync(response, ct);
             }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error writing response for method {Method}", request.Method);
+                _logger.LogError(ex, "Fatal error writing response for {Method} — shutting down", request.Method);
+                break; // stdout is broken; continuing would create a zombie process
             }
         }
 

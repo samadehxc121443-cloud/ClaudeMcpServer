@@ -33,11 +33,13 @@ public sealed class StdioTransport : ITransport
     /// <inheritdoc/>
     public async Task<McpRequest?> ReadRequestAsync(CancellationToken ct)
     {
-        var line = await Console.In.ReadLineAsync(ct);
-        if (line is null) return null;
-
-        line = line.Trim();
-        if (string.IsNullOrEmpty(line)) return null;
+        string? line;
+        do
+        {
+            line = await Console.In.ReadLineAsync(ct);
+            if (line is null) return null; // stream closed — signal shutdown
+        }
+        while (string.IsNullOrWhiteSpace(line)); // skip blank keepalive lines
 
         try
         {

@@ -74,17 +74,12 @@ await host.RunAsync();
 internal sealed class McpHostedService : BackgroundService
 {
     private readonly McpService _mcpService;
-    private readonly ILicenseService _license;
     private readonly ILogger<McpHostedService> _logger;
 
     /// <summary>Initializes a new instance of <see cref="McpHostedService"/>.</summary>
-    public McpHostedService(
-        McpService mcpService,
-        ILicenseService license,
-        ILogger<McpHostedService> logger)
+    public McpHostedService(McpService mcpService, ILogger<McpHostedService> logger)
     {
         _mcpService = mcpService;
-        _license = license;
         _logger = logger;
     }
 
@@ -93,15 +88,9 @@ internal sealed class McpHostedService : BackgroundService
     {
         _logger.LogInformation("ClaudeMcpServer starting — listening on stdio");
 
-        var licenseResult = await _license.ValidateAsync(stoppingToken);
-        if (!licenseResult.IsValid)
-        {
-            _logger.LogCritical("License validation failed: {Message}", licenseResult.Message);
-            return;
-        }
-
-        _logger.LogInformation("License OK — {Message}", licenseResult.Message);
-
+        // License is validated per-request in CallToolHandler. Starting the loop
+        // unconditionally prevents a temporary Railway outage from crashing the server
+        // before Claude Desktop can even connect.
         try
         {
             await _mcpService.RunAsync(stoppingToken);
@@ -111,6 +100,7 @@ internal sealed class McpHostedService : BackgroundService
             _logger.LogCritical(ex, "McpService terminated unexpectedly");
             throw;
         }
+
         _logger.LogInformation("ClaudeMcpServer stopped");
     }
 }
