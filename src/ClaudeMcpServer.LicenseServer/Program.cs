@@ -33,7 +33,10 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-builder.Services.AddScoped<ILicenseManagerService, LicenseManagerService>();
+// Register the real service under its concrete type so the decorator can resolve it
+builder.Services.AddScoped<LicenseManagerService>();
+// Register the interface pointing to the decorator, which wraps the real service
+builder.Services.AddScoped<ILicenseManagerService, LoggingLicenseManagerService>();
 
 var app = builder.Build();
 
