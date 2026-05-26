@@ -1,6 +1,7 @@
 using ClaudeMcpServer.LicenseServer.DTOs;
 using ClaudeMcpServer.LicenseServer.Models;
 using ClaudeMcpServer.LicenseServer.Repositories;
+using ClaudeMcpServer.LicenseServer.Specifications;
 
 namespace ClaudeMcpServer.LicenseServer.Services;
 
@@ -9,6 +10,12 @@ public sealed class LicenseManagerService(
     ISessionTokenRepository tokenRepo,
     IUnitOfWork uow) : ILicenseManagerService
 {
+    private static readonly ISpecification<LicenseKey>[] _validationRules =
+    [
+        new LicenseKeyActiveSpecification(),
+        new LicenseKeyNotExpiredSpecification()
+    ];
+
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
         var entry = await licenseRepo.GetByKeyAsync(apiKey, ct);
@@ -16,11 +23,11 @@ public sealed class LicenseManagerService(
         if (entry is null)
             return new ValidateResult(false, null, "License key not found.");
 
-        if (!entry.IsActive)
-            return new ValidateResult(false, entry.ClientName, "License key has been revoked.");
-
-        if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
-            return new ValidateResult(false, entry.ClientName, $"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}.");
+        foreach (var rule in _validationRules)
+        {
+            if (!rule.IsSatisfiedBy(entry))
+                return new ValidateResult(false, entry.ClientName, rule.GetFailureMessage(entry));
+        }
 
         entry.LastValidatedAt = DateTime.UtcNow;
         await uow.CommitAsync(ct);
@@ -35,11 +42,11 @@ public sealed class LicenseManagerService(
         if (entry is null)
             throw new UnauthorizedAccessException("License key not found.");
 
-        if (!entry.IsActive)
-            throw new UnauthorizedAccessException("License key has been revoked.");
-
-        if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
-            throw new UnauthorizedAccessException($"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}.");
+        foreach (var rule in _validationRules)
+        {
+            if (!rule.IsSatisfiedBy(entry))
+                throw new UnauthorizedAccessException(rule.GetFailureMessage(entry));
+        }
 
         await tokenRepo.RemoveExpiredForClientAsync(entry.ClientName, ct);
 
