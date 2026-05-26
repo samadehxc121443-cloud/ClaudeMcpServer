@@ -1,6 +1,5 @@
 using ClaudeMcpServer.LicenseServer.Data;
 using ClaudeMcpServer.LicenseServer.DTOs;
-using ClaudeMcpServer.LicenseServer.Factories;
 using ClaudeMcpServer.LicenseServer.Filters;
 using ClaudeMcpServer.LicenseServer.Repositories;
 using ClaudeMcpServer.LicenseServer.Services;
@@ -34,8 +33,6 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-builder.Services.AddSingleton<ILicenseKeyFactory, LicenseKeyFactory>();
-builder.Services.AddSingleton<ISessionTokenFactory, SessionTokenFactory>();
 builder.Services.AddScoped<ILicenseManagerService, LicenseManagerService>();
 
 var app = builder.Build();

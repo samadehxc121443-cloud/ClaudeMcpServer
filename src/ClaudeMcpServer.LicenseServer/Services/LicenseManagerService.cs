@@ -1,5 +1,5 @@
 using ClaudeMcpServer.LicenseServer.DTOs;
-using ClaudeMcpServer.LicenseServer.Factories;
+using ClaudeMcpServer.LicenseServer.Models;
 using ClaudeMcpServer.LicenseServer.Repositories;
 
 namespace ClaudeMcpServer.LicenseServer.Services;
@@ -7,9 +7,7 @@ namespace ClaudeMcpServer.LicenseServer.Services;
 public sealed class LicenseManagerService(
     ILicenseKeyRepository licenseRepo,
     ISessionTokenRepository tokenRepo,
-    IUnitOfWork uow,
-    ILicenseKeyFactory keyFactory,
-    ISessionTokenFactory tokenFactory) : ILicenseManagerService
+    IUnitOfWork uow) : ILicenseManagerService
 {
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
@@ -45,7 +43,13 @@ public sealed class LicenseManagerService(
 
         await tokenRepo.RemoveExpiredForClientAsync(entry.ClientName, ct);
 
-        var session = tokenFactory.Create(entry.ClientName);
+        var session = new SessionToken
+        {
+            Token = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N"),
+            ClientName = entry.ClientName,
+            IssuedAt = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.AddHours(1)
+        };
 
         await tokenRepo.AddAsync(session, ct);
         entry.LastValidatedAt = DateTime.UtcNow;
@@ -68,7 +72,16 @@ public sealed class LicenseManagerService(
         DateTime? expiresAt = req.ExpiresAt
             ?? (req.DurationDays.HasValue ? DateTime.UtcNow.AddDays(req.DurationDays.Value) : null);
 
-        var entry = keyFactory.Create(req, expiresAt);
+        var entry = new LicenseKey
+        {
+            Key = Guid.NewGuid().ToString("N"),
+            ClientName = req.ClientName.Trim(),
+            Notes = req.Notes?.Trim(),
+            PlanName = req.PlanName?.Trim(),
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow,
+            ExpiresAt = expiresAt
+        };
 
         await licenseRepo.AddAsync(entry, ct);
         await uow.CommitAsync(ct);
