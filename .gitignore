@@ -64,3 +64,6 @@ coverage/
 *.trx
 *.coverage
 *.coveragexml
+
+# Playwright MCP browser session artifacts
+.playwright-mcp/
