@@ -11,7 +11,7 @@ public sealed class LicenseManagerService(
 {
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
-        var entry = await licenseRepo.GetByKeyAsync(apiKey, ct);
+        var entry = await licenseRepo.GetByKeyAsync(apiKey, ct);        
 
         if (entry is null)
             return new ValidateResult(false, null, "License key not found.");

@@ -201,7 +201,12 @@ ClaudeMcpServer/
 │   ├── ClaudeMcpServer.Host/             # Entry point, DI wiring, appsettings
 │   └── ClaudeMcpServer.LicenseServer/    # Standalone license API (Railway)
 │       ├── Data/                         # EF Core DbContext
+│       ├── DTOs/                         # Request/response models
+│       ├── Filters/                      # AdminKeyFilter (endpoint security)
+│       ├── Migrations/                   # EF Core database migrations
 │       ├── Models/                       # LicenseKey, SessionToken entities
+│       ├── Repositories/                 # IRepository<T>, Repository interfaces + UnitOfWork
+│       ├── Services/                     # ILicenseManagerService, LicenseManagerService, LoggingLicenseManagerService
 │       ├── Dockerfile                    # Container build for Railway
 │       └── Program.cs                    # Minimal API endpoints
 ├── tests/

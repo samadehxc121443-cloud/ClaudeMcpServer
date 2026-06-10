@@ -11,7 +11,7 @@ Thank you for your interest in contributing!
 
 ## Code Style
 
-- C# 12, .NET 10
+- C# 14, .NET 10
 - Nullable reference types enabled (`<Nullable>enable</Nullable>`)
 - XML `/// <summary>` on every public member
 - No `Console.WriteLine` — use `ILogger` (writes to stderr, keeping stdout clean for JSON-RPC)

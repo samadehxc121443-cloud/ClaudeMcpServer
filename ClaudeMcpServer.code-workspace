@@ -1,0 +1,24 @@
+{
+  "folders": [
+    {
+      "name": "ClaudeMcpServer",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "files.exclude": {
+      "**/bin": true,
+      "**/obj": true,
+      "**/.vs": true,
+      "**/.git": true,
+      "**/publish": true
+    },
+    "explorer.fileNesting.enabled": true,
+    "explorer.fileNesting.patterns": {
+      "*.sln": "*.sln.DotSettings, *.sln.DotSettings.user",
+      "*.csproj": "*.user",
+      "appsettings.json": "appsettings.*.json"
+    },
+    "dotnet.defaultSolution": "ClaudeMcpServer.sln"
+  }
+}

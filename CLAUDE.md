@@ -50,6 +50,27 @@ Adding a new tool requires exactly two changes:
 
 `ToolRegistry` auto-discovers all `IToolHandler` registrations via `IEnumerable<IToolHandler>` DI injection — no other changes needed.
 
+## LicenseServer Architecture
+
+`ClaudeMcpServer.LicenseServer` is a standalone ASP.NET Core Minimal API deployed on Railway. Its internal structure uses:
+
+- **Repository Pattern** — `ILicenseKeyRepository`, `ISessionTokenRepository` abstract all DB access.
+- **Unit of Work** — `IUnitOfWork` / `UnitOfWork` wraps `DbContext.SaveChangesAsync` so services never call it directly.
+- **Service Layer** — `ILicenseManagerService` / `LicenseManagerService` holds all business logic.
+- **Decorator Pattern** — `LoggingLicenseManagerService` wraps `ILicenseManagerService` and adds structured logging without modifying the original.
+- **Generic Interface** — `IRepository<T>` (in progress) defines the common `AddAsync` contract shared by both repositories.
+
+DI registrations in `LicenseServer/Program.cs`:
+```csharp
+builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
+builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
+builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
+builder.Services.AddScoped<LicenseManagerService>();
+builder.Services.AddScoped<ILicenseManagerService, LoggingLicenseManagerService>();
+```
+
+**Security:** `AdminKey` lives only as a Railway environment variable — never in code or `appsettings.json`. Admin endpoints are protected by `AdminKeyFilter`.
+
 ## Critical Protocol Constraint
 
 **stdout must contain only valid JSON-RPC 2.0.** All logging goes to stderr. `StdioTransport` enforces this by setting `LogToStandardErrorThreshold = LogLevel.Trace` and writing UTF-8 no-BOM on both stdin/stdout. Never use `Console.WriteLine` anywhere except inside `StdioTransport`.
