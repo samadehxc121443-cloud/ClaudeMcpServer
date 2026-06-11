@@ -73,4 +73,27 @@ public sealed class LoggingLicenseManagerService(
             logger.LogWarning("Rejected admin key ending in ...{Suffix}", key.Length >= 4 ? key[^4..] : "????");
         return valid;
     }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<PlanSummary>> GetActivePlansAsync(CancellationToken ct = default) =>
+        inner.GetActivePlansAsync(ct);
+
+    /// <inheritdoc />
+    public async Task<PlanSummary> CreatePlanAsync(CreatePlanRequest req, CancellationToken ct = default)
+    {
+        logger.LogInformation("Creating plan '{Name}' (price {Price})", req.Name, req.Price);
+        var result = await inner.CreatePlanAsync(req, ct);
+        logger.LogInformation("Plan '{Name}' created with id {Id}", result.Name, result.Id);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default)
+    {
+        logger.LogInformation("Deactivating plan id {Id}", id);
+        var result = await inner.DeactivatePlanAsync(id, ct);
+        if (result is null)
+            logger.LogWarning("Deactivate failed: plan id {Id} not found", id);
+        return result;
+    }
 }

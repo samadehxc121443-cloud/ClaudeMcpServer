@@ -70,4 +70,30 @@ public class CachingLicenseManagerServiceTests
 
         Assert.Equal(2, inner.AdminKeyCalls);
     }
+
+    /// <summary>The active plans list is cached after the first read.</summary>
+    [Fact]
+    public async Task GetActivePlansAsync_Second_Call_Is_Served_From_Cache()
+    {
+        var (service, inner) = CreateService();
+
+        await service.GetActivePlansAsync();
+        var second = await service.GetActivePlansAsync();
+
+        Assert.Equal(1, inner.GetPlansCalls);
+        Assert.Single(second);
+    }
+
+    /// <summary>Creating a plan invalidates the cached list instead of waiting out the TTL.</summary>
+    [Fact]
+    public async Task CreatePlanAsync_Invalidates_Plans_Cache()
+    {
+        var (service, inner) = CreateService();
+        await service.GetActivePlansAsync();
+
+        await service.CreatePlanAsync(new ClaudeMcpServer.LicenseServer.DTOs.CreatePlanRequest("New", 1m, null, null));
+        await service.GetActivePlansAsync();
+
+        Assert.Equal(2, inner.GetPlansCalls);
+    }
 }

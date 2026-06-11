@@ -8,11 +8,13 @@ namespace ClaudeMcpServer.LicenseServer.Services;
 /// <param name="licenseRepo">License key data access.</param>
 /// <param name="tokenRepo">Session token data access.</param>
 /// <param name="adminRepo">Admin key data access.</param>
+/// <param name="planRepo">Plan data access.</param>
 /// <param name="uow">Unit of work used to persist staged changes.</param>
 public sealed class LicenseManagerService(
     ILicenseKeyRepository licenseRepo,
     ISessionTokenRepository tokenRepo,
     IAdminKeyRepository adminRepo,
+    IPlanRepository planRepo,
     IUnitOfWork uow) : ILicenseManagerService
 {
     /// <inheritdoc />
@@ -79,15 +81,26 @@ public sealed class LicenseManagerService(
     /// <inheritdoc />
     public async Task<CreateKeyResult> CreateKeyAsync(CreateKeyRequest req, CancellationToken ct = default)
     {
+        Plan? plan = null;
+        if (req.PlanId.HasValue)
+        {
+            plan = await planRepo.GetByIdAsync(req.PlanId.Value, ct);
+            if (plan is null || !plan.IsActive)
+                throw new ArgumentException($"Plan {req.PlanId} not found or inactive.");
+        }
+
+        // Expiry precedence: explicit date > explicit duration > plan default.
         DateTime? expiresAt = req.ExpiresAt
-            ?? (req.DurationDays.HasValue ? DateTime.UtcNow.AddDays(req.DurationDays.Value) : null);
+            ?? (req.DurationDays.HasValue ? DateTime.UtcNow.AddDays(req.DurationDays.Value) : (DateTime?)null)
+            ?? (plan?.DurationDays is int days ? DateTime.UtcNow.AddDays(days) : (DateTime?)null);
 
         var entry = new LicenseKey
         {
             Key = Guid.NewGuid().ToString("N"),
             ClientName = req.ClientName.Trim(),
             Notes = req.Notes?.Trim(),
-            PlanName = req.PlanName?.Trim(),
+            PlanName = plan?.Name ?? req.PlanName?.Trim(),
+            PlanId = plan?.Id,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
             ExpiresAt = expiresAt
@@ -123,4 +136,45 @@ public sealed class LicenseManagerService(
     /// <inheritdoc />
     public Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default) =>
         adminRepo.ExistsActiveAsync(key.Trim(), ct);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PlanSummary>> GetActivePlansAsync(CancellationToken ct = default)
+    {
+        var plans = await planRepo.GetActiveAsync(ct);
+        return plans.Select(ToSummary).ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<PlanSummary> CreatePlanAsync(CreatePlanRequest req, CancellationToken ct = default)
+    {
+        var name = req.Name.Trim();
+        if (await planRepo.ExistsByNameAsync(name, ct))
+            throw new InvalidOperationException($"An active plan named '{name}' already exists.");
+
+        var plan = new Plan
+        {
+            Name = name,
+            Price = req.Price,
+            MaxEmailsPerDay = req.MaxEmailsPerDay,
+            DurationDays = req.DurationDays
+        };
+
+        await planRepo.AddAsync(plan, ct);
+        await uow.CommitAsync(ct);
+        return ToSummary(plan);
+    }
+
+    /// <inheritdoc />
+    public async Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default)
+    {
+        var plan = await planRepo.GetByIdAsync(id, ct);
+        if (plan is null) return null;
+
+        plan.IsActive = false;
+        await uow.CommitAsync(ct);
+        return ToSummary(plan);
+    }
+
+    private static PlanSummary ToSummary(Plan p) =>
+        new(p.Id, p.Name, p.Price, p.MaxEmailsPerDay, p.DurationDays, p.IsActive);
 }

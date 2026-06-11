@@ -21,6 +21,7 @@ public class LicenseManagerServiceTests
             new LicenseKeyRepository(db),
             new SessionTokenRepository(db),
             new AdminKeyRepository(db),
+            new PlanRepository(db),
             new UnitOfWork(db));
         return (service, db);
     }
@@ -216,5 +217,110 @@ public class LicenseManagerServiceTests
 
         Assert.False(await service.IsAdminKeyValidAsync("inactive-key"));
         Assert.False(await service.IsAdminKeyValidAsync("never-existed"));
+    }
+
+    /// <summary>Creating a plan persists it and returns its summary.</summary>
+    [Fact]
+    public async Task CreatePlanAsync_Persists_Plan()
+    {
+        var (service, db) = CreateService();
+
+        var result = await service.CreatePlanAsync(new CreatePlanRequest("Pro", 9.99m, 1000, null));
+
+        Assert.Equal("Pro", result.Name);
+        Assert.Equal(9.99m, result.Price);
+        Assert.True(result.IsActive);
+        Assert.Single(db.Plans);
+    }
+
+    /// <summary>Duplicate active plan names are rejected.</summary>
+    [Fact]
+    public async Task CreatePlanAsync_Throws_On_Duplicate_Name()
+    {
+        var (service, _) = CreateService();
+        await service.CreatePlanAsync(new CreatePlanRequest("Pro", 9.99m, null, null));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.CreatePlanAsync(new CreatePlanRequest("Pro", 19.99m, null, null)));
+    }
+
+    /// <summary>Only active plans are listed, ordered by price.</summary>
+    [Fact]
+    public async Task GetActivePlansAsync_Returns_Active_Plans_Cheapest_First()
+    {
+        var (service, db) = CreateService();
+        db.Plans.Add(new Plan { Name = "Pro", Price = 9.99m });
+        db.Plans.Add(new Plan { Name = "Free", Price = 0m, MaxEmailsPerDay = 100 });
+        db.Plans.Add(new Plan { Name = "Retired", Price = 5m, IsActive = false });
+        db.SaveChanges();
+
+        var plans = await service.GetActivePlansAsync();
+
+        Assert.Equal(2, plans.Count);
+        Assert.Equal("Free", plans[0].Name);
+        Assert.Equal("Pro", plans[1].Name);
+    }
+
+    /// <summary>Deactivating a plan retires it; missing plans return null.</summary>
+    [Fact]
+    public async Task DeactivatePlanAsync_Retires_Plan_Or_Returns_Null()
+    {
+        var (service, db) = CreateService();
+        var plan = new Plan { Name = "Pro", Price = 9.99m };
+        db.Plans.Add(plan);
+        db.SaveChanges();
+
+        var result = await service.DeactivatePlanAsync(plan.Id);
+
+        Assert.NotNull(result);
+        Assert.False(result!.IsActive);
+        Assert.False(plan.IsActive);
+        Assert.Null(await service.DeactivatePlanAsync(999));
+    }
+
+    /// <summary>A key created on a plan inherits the plan's name and duration.</summary>
+    [Fact]
+    public async Task CreateKeyAsync_Inherits_Plan_Name_And_Duration()
+    {
+        var (service, db) = CreateService();
+        var plan = new Plan { Name = "Pro", Price = 9.99m, DurationDays = 30 };
+        db.Plans.Add(plan);
+        db.SaveChanges();
+
+        var result = await service.CreateKeyAsync(new CreateKeyRequest("Client A", null, "ignored", null, null, plan.Id));
+
+        Assert.Equal("Pro", result.PlanName);
+        Assert.NotNull(result.ExpiresAt);
+        Assert.InRange(result.ExpiresAt!.Value, DateTime.UtcNow.AddDays(29), DateTime.UtcNow.AddDays(31));
+    }
+
+    /// <summary>An explicit expiry on the request beats the plan's default duration.</summary>
+    [Fact]
+    public async Task CreateKeyAsync_Explicit_Expiry_Beats_Plan_Duration()
+    {
+        var (service, db) = CreateService();
+        var plan = new Plan { Name = "Pro", Price = 9.99m, DurationDays = 30 };
+        db.Plans.Add(plan);
+        db.SaveChanges();
+        var explicitExpiry = DateTime.UtcNow.AddDays(7);
+
+        var result = await service.CreateKeyAsync(new CreateKeyRequest("Client A", null, null, explicitExpiry, null, plan.Id));
+
+        Assert.Equal(explicitExpiry, result.ExpiresAt);
+    }
+
+    /// <summary>Creating a key on an unknown or inactive plan is rejected.</summary>
+    [Fact]
+    public async Task CreateKeyAsync_Throws_On_Unknown_Or_Inactive_Plan()
+    {
+        var (service, db) = CreateService();
+        var retired = new Plan { Name = "Retired", Price = 1m, IsActive = false };
+        db.Plans.Add(retired);
+        db.SaveChanges();
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.CreateKeyAsync(new CreateKeyRequest("Client A", null, null, null, null, 999)));
+        await Assert.ThrowsAsync<ArgumentException>(
+            () => service.CreateKeyAsync(new CreateKeyRequest("Client A", null, null, null, null, retired.Id)));
     }
 }

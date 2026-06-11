@@ -56,4 +56,23 @@ public sealed class FakeLicenseManagerService : ILicenseManagerService
         AdminKeyCalls++;
         return Task.FromResult(true);
     }
+
+    /// <summary>Number of times <see cref="GetActivePlansAsync"/> was invoked.</summary>
+    public int GetPlansCalls { get; private set; }
+
+    /// <inheritdoc />
+    public Task<IReadOnlyList<PlanSummary>> GetActivePlansAsync(CancellationToken ct = default)
+    {
+        GetPlansCalls++;
+        return Task.FromResult<IReadOnlyList<PlanSummary>>(
+            [new PlanSummary(1, "Free", 0m, 100, null, true)]);
+    }
+
+    /// <inheritdoc />
+    public Task<PlanSummary> CreatePlanAsync(CreatePlanRequest req, CancellationToken ct = default) =>
+        Task.FromResult(new PlanSummary(2, req.Name, req.Price, req.MaxEmailsPerDay, req.DurationDays, true));
+
+    /// <inheritdoc />
+    public Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default) =>
+        Task.FromResult<PlanSummary?>(new PlanSummary(id, "Fake Plan", 0m, null, null, false));
 }

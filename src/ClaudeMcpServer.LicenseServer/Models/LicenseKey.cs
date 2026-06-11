@@ -15,8 +15,14 @@ public sealed class LicenseKey
     /// <summary>Optional free-form notes about the key.</summary>
     public string? Notes { get; set; }
 
-    /// <summary>Optional plan name (e.g. Free, Pro).</summary>
+    /// <summary>Optional plan name (e.g. Free, Pro). Denormalized from <see cref="Plan"/> when a PlanId is set.</summary>
     public string? PlanName { get; set; }
+
+    /// <summary>Optional reference to the plan this key was created on.</summary>
+    public int? PlanId { get; set; }
+
+    /// <summary>Navigation to the plan, when <see cref="PlanId"/> is set.</summary>
+    public Plan? Plan { get; set; }
 
     /// <summary>False when the key has been revoked.</summary>
     public bool IsActive { get; set; } = true;

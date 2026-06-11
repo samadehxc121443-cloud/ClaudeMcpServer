@@ -39,4 +39,20 @@ public interface ILicenseManagerService
     /// <param name="key">The admin key string.</param>
     /// <param name="ct">Cancellation token.</param>
     Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default);
+
+    /// <summary>Returns all active plans, cheapest first.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    Task<IReadOnlyList<PlanSummary>> GetActivePlansAsync(CancellationToken ct = default);
+
+    /// <summary>Creates a new license plan.</summary>
+    /// <param name="req">Plan parameters.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="InvalidOperationException">An active plan with the same name already exists.</exception>
+    Task<PlanSummary> CreatePlanAsync(CreatePlanRequest req, CancellationToken ct = default);
+
+    /// <summary>Retires a plan: existing keys keep working, new keys can't use it.</summary>
+    /// <param name="id">Database identity of the plan.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The retired plan, or null when it does not exist.</returns>
+    Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default);
 }

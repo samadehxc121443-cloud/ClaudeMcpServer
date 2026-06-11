@@ -89,6 +89,7 @@ if (!string.IsNullOrWhiteSpace(keycloakMetadata))
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IAdminKeyRepository, AdminKeyRepository>();
+builder.Services.AddScoped<IPlanRepository, PlanRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Register the real service under its concrete type so the decorators can resolve it
 builder.Services.AddScoped<LicenseManagerService>();
@@ -188,6 +189,14 @@ app.MapPost("/api/auth/token", async (ValidateRequest req, ILicenseManagerServic
     }
 });
 
+// ── Plans (public: the portal pricing page reads this) ───────────────────────
+
+app.MapGet("/api/plans", async (ILicenseManagerService svc) =>
+{
+    var plans = await svc.GetActivePlansAsync();
+    return Results.Ok(plans);
+});
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 var admin = app.MapGroup("/api/admin").AddEndpointFilter(AdminKeyEndpointFilter.HandleAsync);
@@ -203,8 +212,15 @@ admin.MapPost("/keys", async (CreateKeyRequest req, ILicenseManagerService svc) 
     if (string.IsNullOrWhiteSpace(req.ClientName))
         return Results.BadRequest(new { error = "clientName is required." });
 
-    var result = await svc.CreateKeyAsync(req);
-    return Results.Created($"/api/admin/keys/{result.Id}", result);
+    try
+    {
+        var result = await svc.CreateKeyAsync(req);
+        return Results.Created($"/api/admin/keys/{result.Id}", result);
+    }
+    catch (ArgumentException ex)
+    {
+        return Results.BadRequest(new { error = ex.Message });
+    }
 });
 
 admin.MapDelete("/keys/{id:int}", async (int id, ILicenseManagerService svc) =>
@@ -212,6 +228,32 @@ admin.MapDelete("/keys/{id:int}", async (int id, ILicenseManagerService svc) =>
     var result = await svc.RevokeKeyAsync(id);
     return result is null
         ? Results.NotFound(new { error = $"Key {id} not found." })
+        : Results.Ok(result);
+});
+
+admin.MapPost("/plans", async (CreatePlanRequest req, ILicenseManagerService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(req.Name))
+        return Results.BadRequest(new { error = "name is required." });
+    if (req.Price < 0)
+        return Results.BadRequest(new { error = "price cannot be negative." });
+
+    try
+    {
+        var result = await svc.CreatePlanAsync(req);
+        return Results.Created($"/api/admin/plans/{result.Id}", result);
+    }
+    catch (InvalidOperationException ex)
+    {
+        return Results.Conflict(new { error = ex.Message });
+    }
+});
+
+admin.MapDelete("/plans/{id:int}", async (int id, ILicenseManagerService svc) =>
+{
+    var result = await svc.DeactivatePlanAsync(id);
+    return result is null
+        ? Results.NotFound(new { error = $"Plan {id} not found." })
         : Results.Ok(result);
 });
 

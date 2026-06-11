@@ -44,3 +44,12 @@ public record CreateKeyResult(
 /// <param name="Id">Database identity of the revoked key.</param>
 /// <param name="ClientName">Client the key belonged to.</param>
 public record RevokeResult(bool Revoked, int Id, string ClientName);
+
+/// <summary>Read model of a license plan.</summary>
+/// <param name="Id">Database identity.</param>
+/// <param name="Name">Plan name.</param>
+/// <param name="Price">Monthly price; 0 for free plans.</param>
+/// <param name="MaxEmailsPerDay">Daily email limit; null means unlimited.</param>
+/// <param name="DurationDays">Default key validity in days; null means no expiry.</param>
+/// <param name="IsActive">False when the plan is retired.</param>
+public record PlanSummary(int Id, string Name, decimal Price, int? MaxEmailsPerDay, int? DurationDays, bool IsActive);

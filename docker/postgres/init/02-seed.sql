@@ -2,6 +2,14 @@
 -- Runs once via /docker-entrypoint-initdb.d/ when the Postgres data volume is empty.
 -- Idempotent: ON CONFLICT on the unique "Key" index makes re-runs harmless.
 
+-- Plans first: license keys reference them. Limits are parametrization data
+-- and live here, in the database — never in env vars or config.
+INSERT INTO "Plans" ("Name", "Price", "MaxEmailsPerDay", "DurationDays", "IsActive", "CreatedAt")
+VALUES
+    ('Free', 0.00,  100, 30,   TRUE, NOW()),
+    ('Pro',  9.99, 1000, NULL, TRUE, NOW())
+ON CONFLICT ("Name") DO NOTHING;
+
 INSERT INTO "LicenseKeys"
     ("Key", "ClientName", "Notes", "PlanName", "IsActive", "CreatedAt", "ExpiresAt")
 VALUES
@@ -25,6 +33,11 @@ VALUES
      'Seeded by docker-entrypoint-initdb.d — validation must fail with "revoked"',
      'Pro',  FALSE, NOW(), NULL)
 ON CONFLICT ("Key") DO NOTHING;
+
+-- Link the demo keys to their plan rows by name.
+UPDATE "LicenseKeys"
+SET "PlanId" = (SELECT "Id" FROM "Plans" WHERE "Plans"."Name" = "LicenseKeys"."PlanName")
+WHERE "PlanId" IS NULL AND "PlanName" IN ('Free', 'Pro');
 
 -- Admin keys live in the database (never in env vars or config).
 -- With a seeded key present, the app skips its bootstrap-key generation.

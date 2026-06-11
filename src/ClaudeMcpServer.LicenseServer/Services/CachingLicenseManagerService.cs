@@ -67,4 +67,39 @@ public sealed class CachingLicenseManagerService(
     /// <inheritdoc />
     public Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default) =>
         inner.IsAdminKeyValidAsync(key, ct);
+
+    private const string PlansCacheKey = "plans:active";
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<PlanSummary>> GetActivePlansAsync(CancellationToken ct = default)
+    {
+        var cached = await cache.GetStringAsync(PlansCacheKey, ct);
+        if (cached is not null)
+        {
+            logger.LogInformation("Active plans served from Redis cache");
+            return JsonSerializer.Deserialize<List<PlanSummary>>(cached)!;
+        }
+
+        var result = await inner.GetActivePlansAsync(ct);
+        await cache.SetStringAsync(PlansCacheKey, JsonSerializer.Serialize(result), CacheTtl, ct);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<PlanSummary> CreatePlanAsync(CreatePlanRequest req, CancellationToken ct = default)
+    {
+        var result = await inner.CreatePlanAsync(req, ct);
+        // The plan list changed — drop the cached copy instead of waiting out the TTL.
+        await cache.RemoveAsync(PlansCacheKey, ct);
+        return result;
+    }
+
+    /// <inheritdoc />
+    public async Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default)
+    {
+        var result = await inner.DeactivatePlanAsync(id, ct);
+        if (result is not null)
+            await cache.RemoveAsync(PlansCacheKey, ct);
+        return result;
+    }
 }
