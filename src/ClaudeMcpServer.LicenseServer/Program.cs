@@ -35,8 +35,13 @@ builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Register the real service under its concrete type so the decorator can resolve it
 builder.Services.AddScoped<LicenseManagerService>();
-// Register the interface pointing to the decorator, which wraps the real service
-builder.Services.AddScoped<ILicenseManagerService, LoggingLicenseManagerService>();
+// Register the interface via factory: the decorator wraps the concrete service.
+// (Registering it as AddScoped<ILicenseManagerService, LoggingLicenseManagerService>
+// would be circular — the decorator's ctor asks for ILicenseManagerService.)
+builder.Services.AddScoped<ILicenseManagerService>(sp =>
+    new LoggingLicenseManagerService(
+        sp.GetRequiredService<LicenseManagerService>(),
+        sp.GetRequiredService<ILogger<LoggingLicenseManagerService>>()));
 
 var app = builder.Build();
 
