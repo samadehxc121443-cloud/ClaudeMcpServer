@@ -1,8 +1,8 @@
 # Docker Compose Orchestration
 
-Runs the **LicenseServer + PostgreSQL + Redis + Vault** locally with one
-command. No .NET SDK required on the host — the Dockerfile builds the app
-inside a container.
+Runs the **LicenseServer + PostgreSQL + Redis + Vault + Keycloak** locally
+with one command. No .NET SDK required on the host — the Dockerfile builds
+the app inside a container.
 
 ## Requirements
 
@@ -53,6 +53,8 @@ and logs it once — grab it from the logs and store it securely.
 | `docker/compose.postgres.yml` | **Generic** Postgres (persistent volume + healthcheck + initdb) |
 | `docker/compose.redis.yml` | **Generic** Redis (cache — deliberately no volume) |
 | `docker/compose.vault.yml` | **Generic** Vault in dev mode (secrets store) |
+| `docker/compose.keycloak.yml` | **Generic** Keycloak in dev mode (identity provider) |
+| `docker/keycloak/import/realm-license-server.json` | App realm: roles, portal client, demo users |
 | `docker/postgres/init/01-schema.sql` | Schema, generated with `dotnet ef migrations script --idempotent` |
 | `docker/postgres/init/02-seed.sql` | Demo license keys (pro / free / expired / revoked) |
 | `.env.example` | Template for the required environment variables |
@@ -91,6 +93,23 @@ Vault's KV store; the app fetches them at startup via `VAULT_ADDR` +
 environment variables**. Dev mode is in-memory — `vault-init` reseeds on
 each start. Without `VAULT_ADDR` (e.g. on Railway) the app falls back to
 regular configuration.
+
+**Keycloak** — identity provider for humans (the portal, and later granular
+roles). The `license-server` realm is imported on startup with two realm
+roles (`license-admin`, `license-client`), a public `portal` client, and two
+demo users. Admin endpoints accept **either** a Keycloak bearer token with
+the `license-admin` role **or** the `X-Admin-Key` header (machine-to-machine,
+validated against the database).
+
+```bash
+# Get a token as the demo admin (Keycloak admin console: http://localhost:8085)
+TOKEN=$(curl -s -X POST http://localhost:8085/realms/license-server/protocol/openid-connect/token \
+  -d "grant_type=password" -d "client_id=portal" \
+  -d "username=demo-admin" -d "password=demo-admin-password" | jq -r .access_token)
+
+# Use it on an admin endpoint
+curl http://localhost:8080/api/admin/keys -H "Authorization: Bearer $TOKEN"
+```
 
 ## Seeded demo keys
 

@@ -17,6 +17,7 @@ include:
   - docker/compose.postgres.yml
   - docker/compose.redis.yml
   - docker/compose.vault.yml
+  - docker/compose.keycloak.yml
 
 services:
   # One-shot job: seeds the app's secrets into Vault on every `up`.
@@ -54,6 +55,13 @@ services:
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: ${VAULT_TOKEN}
       REDIS_CONNECTION: redis:6379
+      # Keycloak bearer auth for admin endpoints (X-Admin-Key keeps working
+      # for machine-to-machine access). Two valid issuers: tokens requested
+      # from the host carry the localhost issuer; from inside the network,
+      # the service-name issuer.
+      Keycloak__MetadataAddress: http://keycloak:8080/realms/license-server/.well-known/openid-configuration
+      Keycloak__ValidIssuers__0: http://keycloak:8080/realms/license-server
+      Keycloak__ValidIssuers__1: http://localhost:${KEYCLOAK_PORT:-8085}/realms/license-server
     ports:
       - "${LICENSE_SERVER_PORT:-8080}:8080"
     depends_on:
@@ -63,3 +71,5 @@ services:
         condition: service_healthy
       vault-init:
         condition: service_completed_successfully
+      keycloak:
+        condition: service_healthy

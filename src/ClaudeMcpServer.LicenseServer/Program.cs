@@ -4,8 +4,10 @@ using ClaudeMcpServer.LicenseServer.DTOs;
 using ClaudeMcpServer.LicenseServer.Filters;
 using ClaudeMcpServer.LicenseServer.Repositories;
 using ClaudeMcpServer.LicenseServer.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -61,6 +63,29 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
     opts.UseNpgsql(connectionString);
 });
 
+// ── Keycloak ──────────────────────────────────────────────────────────────────
+// When configured, admin endpoints also accept Keycloak bearer tokens carrying
+// the "license-admin" realm role. X-Admin-Key (DB) keeps working for
+// machine-to-machine access. Without this config, only X-Admin-Key applies.
+var keycloakMetadata = builder.Configuration["Keycloak:MetadataAddress"];
+if (!string.IsNullOrWhiteSpace(keycloakMetadata))
+{
+    builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        .AddJwtBearer(opts =>
+        {
+            opts.MetadataAddress = keycloakMetadata;
+            // Dev only: Keycloak speaks plain HTTP inside the compose network.
+            opts.RequireHttpsMetadata = false;
+            opts.TokenValidationParameters = new TokenValidationParameters
+            {
+                // Keycloak's issuer depends on where the token was requested
+                // from (host vs container network), so both are accepted.
+                ValidIssuers = builder.Configuration.GetSection("Keycloak:ValidIssuers").Get<string[]>(),
+                ValidateAudience = false
+            };
+        });
+}
+
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IAdminKeyRepository, AdminKeyRepository>();
@@ -93,6 +118,9 @@ else
 }
 
 var app = builder.Build();
+
+if (!string.IsNullOrWhiteSpace(keycloakMetadata))
+    app.UseAuthentication();
 
 using (var scope = app.Services.CreateScope())
 {

@@ -1,0 +1,50 @@
+{
+  "realm": "license-server",
+  "enabled": true,
+  "displayName": "License Server",
+  "registrationAllowed": false,
+  "roles": {
+    "realm": [
+      { "name": "license-admin", "description": "Full access to license administration" },
+      { "name": "license-client", "description": "Self-service: manage own licenses" }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "portal",
+      "name": "License Portal",
+      "publicClient": true,
+      "enabled": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "redirectUris": ["http://localhost:*"],
+      "webOrigins": ["+"]
+    }
+  ],
+  "users": [
+    {
+      "username": "demo-admin",
+      "enabled": true,
+      "email": "demo-admin@example.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Admin",
+      "credentials": [
+        { "type": "password", "value": "demo-admin-password", "temporary": false }
+      ],
+      "realmRoles": ["license-admin"]
+    },
+    {
+      "username": "demo-client",
+      "enabled": true,
+      "email": "demo-client@example.local",
+      "emailVerified": true,
+      "firstName": "Demo",
+      "lastName": "Client",
+      "credentials": [
+        { "type": "password", "value": "demo-client-password", "temporary": false }
+      ],
+      "realmRoles": ["license-client"]
+    }
+  ]
+}
