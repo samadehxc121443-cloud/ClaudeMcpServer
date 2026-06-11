@@ -45,6 +45,19 @@ public record CreateKeyResult(
 /// <param name="ClientName">Client the key belonged to.</param>
 public record RevokeResult(bool Revoked, int Id, string ClientName);
 
+/// <summary>
+/// Usage snapshot for a key/operation on the current UTC date. Designed so the
+/// MCP server can decide in ONE round-trip: block when <paramref name="Allowed"/>
+/// is false, warn the client when <paramref name="PercentUsed"/> reaches 90.
+/// </summary>
+/// <param name="Operation">The metered operation.</param>
+/// <param name="Date">UTC date of the counter.</param>
+/// <param name="Used">Units consumed today (after this report, when reporting).</param>
+/// <param name="Limit">Daily limit from the key's plan; null means unlimited.</param>
+/// <param name="PercentUsed">Used/Limit in percent; null when unlimited.</param>
+/// <param name="Allowed">False when the report would exceed the limit (nothing was counted).</param>
+public record UsageResult(string Operation, DateOnly Date, int Used, int? Limit, double? PercentUsed, bool Allowed);
+
 /// <summary>Read model of a license plan.</summary>
 /// <param name="Id">Database identity.</param>
 /// <param name="Name">Plan name.</param>

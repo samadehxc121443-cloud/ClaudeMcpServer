@@ -102,4 +102,14 @@ public sealed class CachingLicenseManagerService(
             await cache.RemoveAsync(PlansCacheKey, ct);
         return result;
     }
+
+    // Never cached: counters must be exact — a stale count could let a client
+    // sail past their daily limit.
+    /// <inheritdoc />
+    public Task<UsageResult> ReportUsageAsync(ReportUsageRequest req, CancellationToken ct = default) =>
+        inner.ReportUsageAsync(req, ct);
+
+    /// <inheritdoc />
+    public Task<UsageResult> GetUsageTodayAsync(string apiKey, string operation, CancellationToken ct = default) =>
+        inner.GetUsageTodayAsync(apiKey, operation, ct);
 }

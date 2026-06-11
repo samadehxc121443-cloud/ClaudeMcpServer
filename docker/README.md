@@ -29,6 +29,16 @@ curl -X POST http://localhost:8080/api/license/validate \
 # Admin: list all keys. Admin keys live in the DATABASE, not in .env —
 # this one is seeded by docker/postgres/init/02-seed.sql:
 curl http://localhost:8080/api/admin/keys -H "X-Admin-Key: demo-admin-99999999999999999999"
+
+# Active plans (public — limits are data in the Plans table)
+curl http://localhost:8080/api/plans
+
+# Report usage: one round-trip returns used/limit/percent/allowed, so the
+# MCP server can warn at 90% or block at the limit without a second call.
+# The demo-free key is on the Free plan (100 emails/day).
+curl -X POST http://localhost:8080/api/usage/report \
+  -H "Content-Type: application/json" \
+  -d '{"apiKey":"demo-free-222222222222222222222","operation":"email"}'
 ```
 
 ## Environments

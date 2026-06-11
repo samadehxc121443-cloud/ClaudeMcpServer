@@ -22,6 +22,7 @@ public class LicenseManagerServiceTests
             new SessionTokenRepository(db),
             new AdminKeyRepository(db),
             new PlanRepository(db),
+            new UsageRepository(db),
             new UnitOfWork(db));
         return (service, db);
     }
@@ -322,5 +323,102 @@ public class LicenseManagerServiceTests
             () => service.CreateKeyAsync(new CreateKeyRequest("Client A", null, null, null, null, 999)));
         await Assert.ThrowsAsync<ArgumentException>(
             () => service.CreateKeyAsync(new CreateKeyRequest("Client A", null, null, null, null, retired.Id)));
+    }
+
+    /// <summary>Seeds a key on a plan with the given daily email limit.</summary>
+    private static LicenseKey SeedKeyWithPlan(LicenseDbContext db, int? maxEmailsPerDay)
+    {
+        var plan = new Plan { Name = $"Plan-{Guid.NewGuid():N}", Price = 0m, MaxEmailsPerDay = maxEmailsPerDay };
+        db.Plans.Add(plan);
+        db.SaveChanges();
+        var key = new LicenseKey { Key = $"key-{Guid.NewGuid():N}", ClientName = "Usage Client", PlanId = plan.Id, PlanName = plan.Name };
+        db.LicenseKeys.Add(key);
+        db.SaveChanges();
+        return key;
+    }
+
+    /// <summary>Reported usage accumulates across calls within the same day.</summary>
+    [Fact]
+    public async Task ReportUsageAsync_Accumulates_Counter()
+    {
+        var (service, db) = CreateService();
+        var key = SeedKeyWithPlan(db, maxEmailsPerDay: 100);
+
+        await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email"));
+        var result = await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email", 4));
+
+        Assert.Equal(5, result.Used);
+        Assert.Equal(100, result.Limit);
+        Assert.Equal(5.0, result.PercentUsed);
+        Assert.True(result.Allowed);
+    }
+
+    /// <summary>At 90 of 100 the snapshot reports 90% — the MCP warns the client here.</summary>
+    [Fact]
+    public async Task ReportUsageAsync_Reports_Ninety_Percent()
+    {
+        var (service, db) = CreateService();
+        var key = SeedKeyWithPlan(db, maxEmailsPerDay: 100);
+
+        var result = await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email", 90));
+
+        Assert.Equal(90.0, result.PercentUsed);
+        Assert.True(result.Allowed);
+    }
+
+    /// <summary>A report that would exceed the limit is rejected and NOT counted.</summary>
+    [Fact]
+    public async Task ReportUsageAsync_Blocks_Over_Limit_Without_Counting()
+    {
+        var (service, db) = CreateService();
+        var key = SeedKeyWithPlan(db, maxEmailsPerDay: 100);
+        await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email", 100));
+
+        var blocked = await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email"));
+
+        Assert.False(blocked.Allowed);
+        Assert.Equal(100, blocked.Used);
+    }
+
+    /// <summary>Keys on an unlimited plan are always allowed and report no percentage.</summary>
+    [Fact]
+    public async Task ReportUsageAsync_Unlimited_Plan_Always_Allowed()
+    {
+        var (service, db) = CreateService();
+        var key = SeedKeyWithPlan(db, maxEmailsPerDay: null);
+
+        var result = await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email", 5000));
+
+        Assert.True(result.Allowed);
+        Assert.Null(result.Limit);
+        Assert.Null(result.PercentUsed);
+    }
+
+    /// <summary>Usage reports against unknown or revoked keys are rejected.</summary>
+    [Fact]
+    public async Task ReportUsageAsync_Throws_On_Unknown_Or_Revoked_Key()
+    {
+        var (service, db) = CreateService();
+        SeedKey(db, "revoked-key", isActive: false);
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => service.ReportUsageAsync(new ReportUsageRequest("does-not-exist", "email")));
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(
+            () => service.ReportUsageAsync(new ReportUsageRequest("revoked-key", "email")));
+    }
+
+    /// <summary>Querying usage never increments the counter.</summary>
+    [Fact]
+    public async Task GetUsageTodayAsync_Does_Not_Count()
+    {
+        var (service, db) = CreateService();
+        var key = SeedKeyWithPlan(db, maxEmailsPerDay: 100);
+        await service.ReportUsageAsync(new ReportUsageRequest(key.Key, "email", 7));
+
+        var first = await service.GetUsageTodayAsync(key.Key, "email");
+        var second = await service.GetUsageTodayAsync(key.Key, "email");
+
+        Assert.Equal(7, first.Used);
+        Assert.Equal(7, second.Used);
     }
 }

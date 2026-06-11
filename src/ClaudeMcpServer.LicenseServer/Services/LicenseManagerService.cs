@@ -9,12 +9,14 @@ namespace ClaudeMcpServer.LicenseServer.Services;
 /// <param name="tokenRepo">Session token data access.</param>
 /// <param name="adminRepo">Admin key data access.</param>
 /// <param name="planRepo">Plan data access.</param>
+/// <param name="usageRepo">Daily usage counter data access.</param>
 /// <param name="uow">Unit of work used to persist staged changes.</param>
 public sealed class LicenseManagerService(
     ILicenseKeyRepository licenseRepo,
     ISessionTokenRepository tokenRepo,
     IAdminKeyRepository adminRepo,
     IPlanRepository planRepo,
+    IUsageRepository usageRepo,
     IUnitOfWork uow) : ILicenseManagerService
 {
     /// <inheritdoc />
@@ -177,4 +179,59 @@ public sealed class LicenseManagerService(
 
     private static PlanSummary ToSummary(Plan p) =>
         new(p.Id, p.Name, p.Price, p.MaxEmailsPerDay, p.DurationDays, p.IsActive);
+
+    /// <inheritdoc />
+    public Task<UsageResult> ReportUsageAsync(ReportUsageRequest req, CancellationToken ct = default) =>
+        TrackUsageAsync(req.ApiKey, req.Operation, Math.Max(1, req.Count), ct);
+
+    /// <inheritdoc />
+    public Task<UsageResult> GetUsageTodayAsync(string apiKey, string operation, CancellationToken ct = default) =>
+        TrackUsageAsync(apiKey, operation, increment: 0, ct);
+
+    private async Task<UsageResult> TrackUsageAsync(string apiKey, string operation, int increment, CancellationToken ct)
+    {
+        var entry = await licenseRepo.GetByKeyAsync(apiKey, ct)
+            ?? throw new UnauthorizedAccessException("License key not found.");
+
+        if (!entry.IsActive)
+            throw new UnauthorizedAccessException("License key has been revoked.");
+
+        if (entry.ExpiresAt.HasValue && entry.ExpiresAt.Value < DateTime.UtcNow)
+            throw new UnauthorizedAccessException($"License expired on {entry.ExpiresAt.Value:yyyy-MM-dd}.");
+
+        operation = operation.Trim().ToLowerInvariant();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+
+        var counter = await usageRepo.GetAsync(entry.Id, today, operation, ct);
+        var used = counter?.Count ?? 0;
+
+        // Limits are parametrization data: they come from the key's plan in the
+        // database. Only "email" is metered against a plan limit for now.
+        int? limit = null;
+        if (operation == "email" && entry.PlanId.HasValue)
+        {
+            var plan = await planRepo.GetByIdAsync(entry.PlanId.Value, ct);
+            limit = plan?.MaxEmailsPerDay;
+        }
+
+        var allowed = limit is null || used + increment <= limit.Value;
+
+        if (allowed && increment > 0)
+        {
+            if (counter is null)
+            {
+                counter = new DailyUsage { LicenseKeyId = entry.Id, Date = today, Operation = operation, Count = increment };
+                await usageRepo.AddAsync(counter, ct);
+            }
+            else
+            {
+                counter.Count += increment;
+            }
+            await uow.CommitAsync(ct);
+            used += increment;
+        }
+
+        double? percent = limit is > 0 ? Math.Round(used * 100.0 / limit.Value, 1) : null;
+        return new UsageResult(operation, today, used, limit, percent, allowed);
+    }
 }

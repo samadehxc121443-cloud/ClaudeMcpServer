@@ -75,4 +75,22 @@ public sealed class FakeLicenseManagerService : ILicenseManagerService
     /// <inheritdoc />
     public Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default) =>
         Task.FromResult<PlanSummary?>(new PlanSummary(id, "Fake Plan", 0m, null, null, false));
+
+    /// <summary>Number of times <see cref="ReportUsageAsync"/> was invoked.</summary>
+    public int ReportUsageCalls { get; private set; }
+
+    /// <summary>Canned result returned by the usage methods.</summary>
+    public UsageResult UsageResult { get; set; } =
+        new("email", DateOnly.FromDateTime(DateTime.UtcNow), 1, 100, 1.0, true);
+
+    /// <inheritdoc />
+    public Task<UsageResult> ReportUsageAsync(ReportUsageRequest req, CancellationToken ct = default)
+    {
+        ReportUsageCalls++;
+        return Task.FromResult(UsageResult);
+    }
+
+    /// <inheritdoc />
+    public Task<UsageResult> GetUsageTodayAsync(string apiKey, string operation, CancellationToken ct = default) =>
+        Task.FromResult(UsageResult);
 }

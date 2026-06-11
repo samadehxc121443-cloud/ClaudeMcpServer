@@ -90,6 +90,7 @@ builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IAdminKeyRepository, AdminKeyRepository>();
 builder.Services.AddScoped<IPlanRepository, PlanRepository>();
+builder.Services.AddScoped<IUsageRepository, UsageRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Register the real service under its concrete type so the decorators can resolve it
 builder.Services.AddScoped<LicenseManagerService>();
@@ -181,6 +182,40 @@ app.MapPost("/api/auth/token", async (ValidateRequest req, ILicenseManagerServic
     try
     {
         var result = await svc.ExchangeTokenAsync(req.ApiKey);
+        return Results.Ok(result);
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 401);
+    }
+});
+
+// ── Usage (key-authenticated: the MCP server reports and queries here) ───────
+
+app.MapPost("/api/usage/report", async (ReportUsageRequest req, ILicenseManagerService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(req.ApiKey) || string.IsNullOrWhiteSpace(req.Operation))
+        return Results.BadRequest(new { error = "apiKey and operation are required." });
+
+    try
+    {
+        var result = await svc.ReportUsageAsync(req);
+        return Results.Ok(result);
+    }
+    catch (UnauthorizedAccessException ex)
+    {
+        return Results.Json(new { error = ex.Message }, statusCode: 401);
+    }
+});
+
+app.MapPost("/api/usage/query", async (ReportUsageRequest req, ILicenseManagerService svc) =>
+{
+    if (string.IsNullOrWhiteSpace(req.ApiKey) || string.IsNullOrWhiteSpace(req.Operation))
+        return Results.BadRequest(new { error = "apiKey and operation are required." });
+
+    try
+    {
+        var result = await svc.GetUsageTodayAsync(req.ApiKey, req.Operation);
         return Results.Ok(result);
     }
     catch (UnauthorizedAccessException ex)

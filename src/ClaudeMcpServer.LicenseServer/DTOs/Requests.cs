@@ -19,3 +19,9 @@ public record CreateKeyRequest(string ClientName, string? Notes, string? PlanNam
 /// <param name="MaxEmailsPerDay">Daily email limit; null means unlimited.</param>
 /// <param name="DurationDays">Default key validity in days; null means no expiry.</param>
 public record CreatePlanRequest(string Name, decimal Price, int? MaxEmailsPerDay, int? DurationDays);
+
+/// <summary>Request body for reporting (or querying) usage of a metered operation.</summary>
+/// <param name="ApiKey">The license key the usage belongs to.</param>
+/// <param name="Operation">The metered operation, e.g. "email".</param>
+/// <param name="Count">How many units to report; defaults to 1. Ignored on queries.</param>
+public record ReportUsageRequest(string ApiKey, string Operation, int Count = 1);

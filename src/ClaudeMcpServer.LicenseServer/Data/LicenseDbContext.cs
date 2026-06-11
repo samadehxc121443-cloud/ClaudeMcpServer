@@ -19,6 +19,9 @@ public sealed class LicenseDbContext(DbContextOptions<LicenseDbContext> options)
     /// <summary>License plans with their limits and pricing.</summary>
     public DbSet<Plan> Plans => Set<Plan>();
 
+    /// <summary>Daily usage counters per license key and operation.</summary>
+    public DbSet<DailyUsage> DailyUsages => Set<DailyUsage>();
+
     /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -50,6 +53,13 @@ public sealed class LicenseDbContext(DbContextOptions<LicenseDbContext> options)
             e.Property(p => p.Price).HasPrecision(10, 2);
             // Keys outlive their plan: deleting a plan is blocked while keys reference it.
             e.HasMany<LicenseKey>().WithOne(k => k.Plan).HasForeignKey(k => k.PlanId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<DailyUsage>(e =>
+        {
+            e.HasIndex(u => new { u.LicenseKeyId, u.Date, u.Operation }).IsUnique();
+            e.Property(u => u.Operation).HasMaxLength(50);
+            e.HasOne(u => u.LicenseKey).WithMany().HasForeignKey(u => u.LicenseKeyId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

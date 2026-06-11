@@ -96,4 +96,24 @@ public sealed class LoggingLicenseManagerService(
             logger.LogWarning("Deactivate failed: plan id {Id} not found", id);
         return result;
     }
+
+    /// <inheritdoc />
+    public async Task<UsageResult> ReportUsageAsync(ReportUsageRequest req, CancellationToken ct = default)
+    {
+        var result = await inner.ReportUsageAsync(req, ct);
+        if (!result.Allowed)
+            logger.LogWarning("Usage BLOCKED for '{Operation}': {Used}/{Limit} (daily limit reached)",
+                result.Operation, result.Used, result.Limit);
+        else if (result.PercentUsed >= 90)
+            logger.LogWarning("Usage at {Percent}% for '{Operation}': {Used}/{Limit}",
+                result.PercentUsed, result.Operation, result.Used, result.Limit);
+        else
+            logger.LogInformation("Usage reported for '{Operation}': {Used}/{Limit}",
+                result.Operation, result.Used, result.Limit?.ToString() ?? "∞");
+        return result;
+    }
+
+    /// <inheritdoc />
+    public Task<UsageResult> GetUsageTodayAsync(string apiKey, string operation, CancellationToken ct = default) =>
+        inner.GetUsageTodayAsync(apiKey, operation, ct);
 }

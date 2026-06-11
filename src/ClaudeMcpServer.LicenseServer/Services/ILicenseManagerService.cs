@@ -55,4 +55,21 @@ public interface ILicenseManagerService
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The retired plan, or null when it does not exist.</returns>
     Task<PlanSummary?> DeactivatePlanAsync(int id, CancellationToken ct = default);
+
+    /// <summary>
+    /// Reports usage of a metered operation against the key's daily plan limit.
+    /// When the report would exceed the limit, nothing is counted and the result
+    /// comes back with Allowed = false so the caller can block the operation.
+    /// </summary>
+    /// <param name="req">The key, operation and unit count to report.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="UnauthorizedAccessException">The key is unknown, revoked or expired.</exception>
+    Task<UsageResult> ReportUsageAsync(ReportUsageRequest req, CancellationToken ct = default);
+
+    /// <summary>Returns today's usage snapshot for a key/operation without counting anything.</summary>
+    /// <param name="apiKey">The license key.</param>
+    /// <param name="operation">The metered operation, e.g. "email".</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <exception cref="UnauthorizedAccessException">The key is unknown, revoked or expired.</exception>
+    Task<UsageResult> GetUsageTodayAsync(string apiKey, string operation, CancellationToken ct = default);
 }
