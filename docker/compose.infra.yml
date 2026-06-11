@@ -23,8 +23,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}
       POSTGRES_DB: ${POSTGRES_DB:-app}
-    ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+    # No host port on purpose: only reachable inside the compose network.
+    # For a SQL console use: docker compose exec postgres psql -U <user> -d <db>
     volumes:
       # Persistent data — survives `docker compose down` (removed only with `down -v`).
       - postgres-data:/var/lib/postgresql/data
@@ -41,10 +41,14 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required — set it in .env}"]
+    environment:
+      # Exposed to the container so the healthcheck can authenticate.
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    # No host port on purpose: only reachable inside the compose network.
+    # For a console use: docker compose exec redis redis-cli -a <password>
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a $${REDIS_PASSWORD} ping | grep PONG"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -60,8 +64,8 @@ services:
     environment:
       VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:?VAULT_TOKEN is required — set it in .env}
       VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
-    ports:
-      - "${VAULT_PORT:-8200}:8200"
+    # No host port on purpose: only reachable inside the compose network.
+    # To inspect secrets: docker compose exec -e VAULT_TOKEN=<token> vault vault kv get ...
     healthcheck:
       test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
       interval: 5s

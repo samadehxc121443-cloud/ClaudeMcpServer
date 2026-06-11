@@ -120,12 +120,16 @@ curl http://localhost:8080/api/admin/keys -H "Authorization: Bearer $TOKEN"
 
 ## Day-2 operations
 
+Postgres, Redis and Vault are **not exposed to the host** — they live on the
+compose-internal network only. Use `exec` for consoles:
+
 ```bash
 docker compose down            # stop; DB DATA IS KEPT (named volume)
 docker compose down -v         # stop AND delete the database volume
 docker compose up --build      # rebuild after code changes
 docker compose logs -f license-server
 docker compose exec postgres psql -U licenses -d licenses    # SQL console
-docker compose exec redis redis-cli                          # Redis console
-docker compose exec vault vault kv get -address=http://127.0.0.1:8200 secret/license-server
+docker compose exec redis redis-cli -a "$REDIS_PASSWORD"     # Redis console
+docker compose exec -e VAULT_TOKEN="$VAULT_TOKEN" vault \
+  vault kv get -address=http://127.0.0.1:8200 secret/license-server
 ```
