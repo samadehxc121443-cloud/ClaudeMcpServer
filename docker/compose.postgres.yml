@@ -1,0 +1,32 @@
+# Generic, reusable PostgreSQL service.
+#
+# Nothing here is specific to the LicenseServer: any orchestration can
+# `include:` this file and get a Postgres with a persistent volume,
+# a healthcheck, and automatic seeding from ./postgres/init.
+# Configuration comes entirely from environment variables (.env).
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Persistent data — survives `docker compose down` (removed only with `down -v`).
+      - postgres-data:/var/lib/postgresql/data
+      # Init scripts run in alphabetical order, ONLY when the data volume is empty.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # $$ so Compose passes the literal $VAR through to the container shell.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  postgres-data:

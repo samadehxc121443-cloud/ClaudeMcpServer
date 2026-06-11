@@ -1,0 +1,31 @@
+# LicenseServer orchestration.
+#
+# Usage:
+#   cp .env.example .env   (then edit the secrets)
+#   docker compose up --build
+#
+# The generic Postgres service is included from docker/compose.postgres.yml
+# so it can be reused by other orchestrations.
+
+name: license-server
+
+include:
+  - docker/compose.postgres.yml
+
+services:
+  license-server:
+    build:
+      context: .
+      dockerfile: src/ClaudeMcpServer.LicenseServer/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      # Key-value format on purpose: the DATABASE_URL (URI) code path in
+      # Program.cs forces SSL, which the local Postgres container doesn't have.
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-app};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
+      AdminKey: ${ADMIN_KEY:?ADMIN_KEY is required — set it in .env}
+    ports:
+      - "${LICENSE_SERVER_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
