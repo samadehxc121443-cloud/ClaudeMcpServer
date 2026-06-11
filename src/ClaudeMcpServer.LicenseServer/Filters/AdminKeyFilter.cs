@@ -3,8 +3,16 @@ using ClaudeMcpServer.LicenseServer.Services;
 
 namespace ClaudeMcpServer.LicenseServer.Filters;
 
+/// <summary>
+/// Endpoint filter protecting the admin API. Accepts either a Keycloak bearer
+/// token carrying the "license-admin" realm role (humans) or an X-Admin-Key
+/// header validated against the database (machine-to-machine).
+/// </summary>
 public static class AdminKeyEndpointFilter
 {
+    /// <summary>Authorizes the request or short-circuits with 401.</summary>
+    /// <param name="ctx">The endpoint invocation context.</param>
+    /// <param name="next">The next filter or endpoint in the pipeline.</param>
     public static async ValueTask<object?> HandleAsync(EndpointFilterInvocationContext ctx, EndpointFilterDelegate next)
     {
         // 1) Keycloak bearer token with the "license-admin" realm role (humans, portal).

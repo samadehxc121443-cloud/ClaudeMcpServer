@@ -1,4 +1,4 @@
-using ClaudeMcpServer.LicenseServer.DTOs;
+﻿using ClaudeMcpServer.LicenseServer.DTOs;
 using Microsoft.Extensions.Logging;
 
 namespace ClaudeMcpServer.LicenseServer.Services;
@@ -11,6 +11,7 @@ public sealed class LoggingLicenseManagerService(
     ILicenseManagerService inner,
     ILogger<LoggingLicenseManagerService> logger) : ILicenseManagerService
 {
+    /// <inheritdoc />
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
         logger.LogInformation("Validating license key ending in ...{Suffix}", apiKey[^4..]);
@@ -22,6 +23,7 @@ public sealed class LoggingLicenseManagerService(
         return result;
     }
 
+    /// <inheritdoc />
     public async Task<TokenResult> ExchangeTokenAsync(string apiKey, CancellationToken ct = default)
     {
         logger.LogInformation("Token exchange requested for key ending in ...{Suffix}", apiKey[^4..]);
@@ -30,6 +32,7 @@ public sealed class LoggingLicenseManagerService(
         return result;
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<KeySummary>> GetAllKeysAsync(CancellationToken ct = default)
     {
         var result = await inner.GetAllKeysAsync(ct);
@@ -37,6 +40,7 @@ public sealed class LoggingLicenseManagerService(
         return result;
     }
 
+    /// <inheritdoc />
     public async Task<CreateKeyResult> CreateKeyAsync(CreateKeyRequest req, CancellationToken ct = default)
     {
         logger.LogInformation("Creating license key for client '{Client}'", req.ClientName);
@@ -45,6 +49,7 @@ public sealed class LoggingLicenseManagerService(
         return result;
     }
 
+    /// <inheritdoc />
     public async Task<RevokeResult?> RevokeKeyAsync(int id, CancellationToken ct = default)
     {
         logger.LogInformation("Revoking license key id {Id}", id);
@@ -56,9 +61,11 @@ public sealed class LoggingLicenseManagerService(
         return result;
     }
 
+    /// <inheritdoc />
     public Task<int> CountKeysAsync(CancellationToken ct = default) =>
         inner.CountKeysAsync(ct);
 
+    /// <inheritdoc />
     public async Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default)
     {
         var valid = await inner.IsAdminKeyValidAsync(key, ct);

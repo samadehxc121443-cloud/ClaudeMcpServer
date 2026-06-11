@@ -3,12 +3,20 @@ using Microsoft.EntityFrameworkCore;
 
 namespace ClaudeMcpServer.LicenseServer.Data;
 
+/// <summary>EF Core context for the license database.</summary>
+/// <param name="options">Context options supplied by dependency injection.</param>
 public sealed class LicenseDbContext(DbContextOptions<LicenseDbContext> options) : DbContext(options)
 {
+    /// <summary>License keys issued to clients.</summary>
     public DbSet<LicenseKey> LicenseKeys => Set<LicenseKey>();
+
+    /// <summary>Short-lived session tokens.</summary>
     public DbSet<SessionToken> SessionTokens => Set<SessionToken>();
+
+    /// <summary>Administrative access keys.</summary>
     public DbSet<AdminKey> AdminKeys => Set<AdminKey>();
 
+    /// <inheritdoc />
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<LicenseKey>(e =>

@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using ClaudeMcpServer.LicenseServer.DTOs;
 using Microsoft.Extensions.Caching.Distributed;
 
@@ -20,6 +20,7 @@ public sealed class CachingLicenseManagerService(
         AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(60)
     };
 
+    /// <inheritdoc />
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
         var cacheKey = $"license:validate:{apiKey}";
@@ -37,15 +38,19 @@ public sealed class CachingLicenseManagerService(
     }
 
     // Token exchange creates a new session token every call — never cached.
+    /// <inheritdoc />
     public Task<TokenResult> ExchangeTokenAsync(string apiKey, CancellationToken ct = default) =>
         inner.ExchangeTokenAsync(apiKey, ct);
 
+    /// <inheritdoc />
     public Task<IReadOnlyList<KeySummary>> GetAllKeysAsync(CancellationToken ct = default) =>
         inner.GetAllKeysAsync(ct);
 
+    /// <inheritdoc />
     public Task<CreateKeyResult> CreateKeyAsync(CreateKeyRequest req, CancellationToken ct = default) =>
         inner.CreateKeyAsync(req, ct);
 
+    /// <inheritdoc />
     public async Task<RevokeResult?> RevokeKeyAsync(int id, CancellationToken ct = default)
     {
         var result = await inner.RevokeKeyAsync(id, ct);
@@ -54,10 +59,12 @@ public sealed class CachingLicenseManagerService(
         return result;
     }
 
+    /// <inheritdoc />
     public Task<int> CountKeysAsync(CancellationToken ct = default) =>
         inner.CountKeysAsync(ct);
 
     // Never cached: revoking an admin key must take effect immediately.
+    /// <inheritdoc />
     public Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default) =>
         inner.IsAdminKeyValidAsync(key, ct);
 }

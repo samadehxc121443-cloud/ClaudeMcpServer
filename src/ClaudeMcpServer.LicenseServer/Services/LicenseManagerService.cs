@@ -4,12 +4,18 @@ using ClaudeMcpServer.LicenseServer.Repositories;
 
 namespace ClaudeMcpServer.LicenseServer.Services;
 
+/// <summary>Core implementation of <see cref="ILicenseManagerService"/> backed by the repositories.</summary>
+/// <param name="licenseRepo">License key data access.</param>
+/// <param name="tokenRepo">Session token data access.</param>
+/// <param name="adminRepo">Admin key data access.</param>
+/// <param name="uow">Unit of work used to persist staged changes.</param>
 public sealed class LicenseManagerService(
     ILicenseKeyRepository licenseRepo,
     ISessionTokenRepository tokenRepo,
     IAdminKeyRepository adminRepo,
     IUnitOfWork uow) : ILicenseManagerService
 {
+    /// <inheritdoc />
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
     {
         var entry = await licenseRepo.GetByKeyAsync(apiKey, ct);        
@@ -29,6 +35,7 @@ public sealed class LicenseManagerService(
         return new ValidateResult(true, entry.ClientName, null);
     }
 
+    /// <inheritdoc />
     public async Task<TokenResult> ExchangeTokenAsync(string apiKey, CancellationToken ct = default)
     {
         var entry = await licenseRepo.GetByKeyAsync(apiKey, ct);
@@ -59,6 +66,7 @@ public sealed class LicenseManagerService(
         return new TokenResult(session.Token, session.ClientName, session.ExpiresAt);
     }
 
+    /// <inheritdoc />
     public async Task<IReadOnlyList<KeySummary>> GetAllKeysAsync(CancellationToken ct = default)
     {
         var keys = await licenseRepo.GetAllAsync(ct);
@@ -68,6 +76,7 @@ public sealed class LicenseManagerService(
             .ToList();
     }
 
+    /// <inheritdoc />
     public async Task<CreateKeyResult> CreateKeyAsync(CreateKeyRequest req, CancellationToken ct = default)
     {
         DateTime? expiresAt = req.ExpiresAt
@@ -92,6 +101,7 @@ public sealed class LicenseManagerService(
             entry.IsActive, entry.CreatedAt, entry.ExpiresAt);
     }
 
+    /// <inheritdoc />
     public async Task<RevokeResult?> RevokeKeyAsync(int id, CancellationToken ct = default)
     {
         var entry = await licenseRepo.GetByIdAsync(id, ct);
@@ -103,12 +113,14 @@ public sealed class LicenseManagerService(
         return new RevokeResult(true, entry.Id, entry.ClientName);
     }
 
+    /// <inheritdoc />
     public async Task<int> CountKeysAsync(CancellationToken ct = default)
     {
         var keys = await licenseRepo.GetAllAsync(ct);
         return keys.Count;
     }
 
+    /// <inheritdoc />
     public Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default) =>
         adminRepo.ExistsActiveAsync(key.Trim(), ct);
 }
