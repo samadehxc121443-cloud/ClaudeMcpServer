@@ -4,20 +4,14 @@
 #   cp .env.example .env   (then edit the secrets)
 #   docker compose up --build
 #
-# Generic, reusable infra services are included from docker/ so other
-# orchestrations can pick them up individually:
-#   - Postgres : database with persistent volume + initdb seeding
-#   - Redis    : cache backing the CachingLicenseManagerService decorator
-#   - Vault    : secrets store — the app reads AdminKey and the DB
-#                connection string from here, not from env vars
+# All generic, reusable infra services (Postgres, Redis, Vault, Keycloak)
+# live in a single compose file that any other orchestration can include
+# as one piece. App-specific glue stays in this file.
 
 name: license-server
 
 include:
-  - docker/compose.postgres.yml
-  - docker/compose.redis.yml
-  - docker/compose.vault.yml
-  - docker/compose.keycloak.yml
+  - docker/compose.infra.yml
 
 services:
   # One-shot job: seeds the app's secrets into Vault on every `up`.

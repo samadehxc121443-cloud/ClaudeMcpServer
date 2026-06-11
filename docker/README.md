@@ -49,19 +49,17 @@ and logs it once — grab it from the logs and store it securely.
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yml` (repo root) | App orchestration; `include:`s the generic services below |
-| `docker/compose.postgres.yml` | **Generic** Postgres (persistent volume + healthcheck + initdb) |
-| `docker/compose.redis.yml` | **Generic** Redis (cache — deliberately no volume) |
-| `docker/compose.vault.yml` | **Generic** Vault in dev mode (secrets store) |
-| `docker/compose.keycloak.yml` | **Generic** Keycloak in dev mode (identity provider) |
+| `docker-compose.yml` (repo root) | App orchestration; `include:`s the generic infra compose |
+| `docker/compose.infra.yml` | **All generic infra in one file**: Postgres, Redis, Vault, Keycloak |
 | `docker/keycloak/import/realm-license-server.json` | App realm: roles, portal client, demo users |
 | `docker/postgres/init/01-schema.sql` | Schema, generated with `dotnet ef migrations script --idempotent` |
 | `docker/postgres/init/02-seed.sql` | Demo license keys (pro / free / expired / revoked) |
 | `.env.example` | Template for the required environment variables |
 
-The generic files contain nothing app-specific: any other orchestration can
-`include:` them as-is. App-specific glue (like what secrets go into Vault)
-stays in the root `docker-compose.yml`.
+`compose.infra.yml` contains nothing app-specific: any other orchestration
+can `include:` it as one piece. App-specific glue (what secrets go into
+Vault, realm content, SQL seeds) stays in the root `docker-compose.yml` and
+the `docker/` data folders.
 
 ## How each service is used
 

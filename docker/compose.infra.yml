@@ -1,0 +1,96 @@
+# Generic, reusable infrastructure services — single compose file.
+#
+# Any orchestration can `include:` this file and get the full infra stack:
+#   - postgres : database with persistent volume + initdb seeding
+#   - redis    : cache (deliberately no volume — cached data is rebuildable)
+#   - vault    : secrets store (dev mode: in-memory, auto-unsealed)
+#   - keycloak : identity provider (dev mode, realms imported on startup)
+#
+# Nothing here is app-specific. App-specific content goes in the consuming
+# orchestration's data folders, mounted by convention:
+#   ./postgres/init    → SQL schema/seed scripts (run once, on empty volume)
+#   ./keycloak/import  → realm JSON files (imported on startup)
+# What goes INTO Vault is seeded by the consuming orchestration (one-shot
+# job in the root compose), since secret content is app-specific too.
+#
+# All configuration comes from environment variables (.env).
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required — set it in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Persistent data — survives `docker compose down` (removed only with `down -v`).
+      - postgres-data:/var/lib/postgresql/data
+      # Init scripts run in alphabetical order, ONLY when the data volume is empty.
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      # $$ so Compose passes the literal $VAR through to the container shell.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+
+  vault:
+    # Dev mode: in-memory storage, auto-unsealed, root token from .env.
+    # NOT for production (a real Vault needs persistent storage, TLS, init/unseal).
+    image: hashicorp/vault:1.18
+    restart: unless-stopped
+    cap_add:
+      - IPC_LOCK
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_TOKEN:?VAULT_TOKEN is required — set it in .env}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports:
+      - "${VAULT_PORT:-8200}:8200"
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 3s
+
+  keycloak:
+    # Dev mode: HTTP, embedded DB. Production needs `start` with TLS,
+    # a real database, and a fixed hostname.
+    image: quay.io/keycloak/keycloak:26.0
+    restart: unless-stopped
+    command: ["start-dev", "--import-realm"]
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USER:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?KEYCLOAK_ADMIN_PASSWORD is required — set it in .env}
+      KC_HEALTH_ENABLED: "true"
+    ports:
+      - "${KEYCLOAK_PORT:-8085}:8080"
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+    healthcheck:
+      # The Keycloak image ships no curl/wget; bash /dev/tcp against the
+      # management port (9000) confirms the server is up and realms imported.
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 15s
+
+volumes:
+  postgres-data:
