@@ -7,6 +7,7 @@ namespace ClaudeMcpServer.LicenseServer.Services;
 public sealed class LicenseManagerService(
     ILicenseKeyRepository licenseRepo,
     ISessionTokenRepository tokenRepo,
+    IAdminKeyRepository adminRepo,
     IUnitOfWork uow) : ILicenseManagerService
 {
     public async Task<ValidateResult> ValidateAsync(string apiKey, CancellationToken ct = default)
@@ -107,4 +108,7 @@ public sealed class LicenseManagerService(
         var keys = await licenseRepo.GetAllAsync(ct);
         return keys.Count;
     }
+
+    public Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default) =>
+        adminRepo.ExistsActiveAsync(key.Trim(), ct);
 }

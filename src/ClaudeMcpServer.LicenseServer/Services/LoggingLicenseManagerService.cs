@@ -58,4 +58,12 @@ public sealed class LoggingLicenseManagerService(
 
     public Task<int> CountKeysAsync(CancellationToken ct = default) =>
         inner.CountKeysAsync(ct);
+
+    public async Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default)
+    {
+        var valid = await inner.IsAdminKeyValidAsync(key, ct);
+        if (!valid)
+            logger.LogWarning("Rejected admin key ending in ...{Suffix}", key.Length >= 4 ? key[^4..] : "????");
+        return valid;
+    }
 }

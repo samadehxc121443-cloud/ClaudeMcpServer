@@ -29,9 +29,9 @@ if (!string.IsNullOrWhiteSpace(vaultAddr))
     using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
     var data = doc.RootElement.GetProperty("data").GetProperty("data");
 
+    // Only infrastructure secrets live in Vault. Application credentials
+    // (admin keys, license keys) are data — they live in the database.
     var secrets = new Dictionary<string, string?>();
-    if (data.TryGetProperty("AdminKey", out var adminKey))
-        secrets["AdminKey"] = adminKey.GetString();
     if (data.TryGetProperty("ConnectionString", out var connString))
         secrets["ConnectionStrings:DefaultConnection"] = connString.GetString();
 
@@ -63,6 +63,7 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
 
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
+builder.Services.AddScoped<IAdminKeyRepository, AdminKeyRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
 // Register the real service under its concrete type so the decorators can resolve it
 builder.Services.AddScoped<LicenseManagerService>();
@@ -97,20 +98,38 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<LicenseDbContext>();
     db.Database.Migrate();
+
+    // Bootstrap: without at least one admin key in the DB, the admin API is
+    // unreachable. Generate one on first start and log it once (stderr).
+    if (!db.AdminKeys.Any(k => k.IsActive))
+    {
+        var bootstrap = new ClaudeMcpServer.LicenseServer.Models.AdminKey
+        {
+            Key = Guid.NewGuid().ToString("N"),
+            Name = "bootstrap"
+        };
+        db.AdminKeys.Add(bootstrap);
+        db.SaveChanges();
+        app.Logger.LogWarning(
+            "No active admin keys found. Bootstrap admin key created: {Key} — store it securely and consider rotating it.",
+            bootstrap.Key);
+    }
 }
 
 // ── Health ───────────────────────────────────────────────────────────────────
 
-app.MapGet("/health", async (ILicenseManagerService svc) =>
+app.MapGet("/health", async (ILicenseManagerService svc, IHostEnvironment env) =>
 {
     try
     {
         var count = await svc.CountKeysAsync();
-        return Results.Ok(new { status = "healthy", keyCount = count, utc = DateTime.UtcNow });
+        return Results.Ok(new { status = "healthy", environment = env.EnvironmentName, keyCount = count, utc = DateTime.UtcNow });
     }
     catch (Exception ex)
     {
-        return Results.Json(new { status = "unhealthy", error = ex.Message, utc = DateTime.UtcNow }, statusCode: 503);
+        // Internal details are only safe to expose outside Production.
+        var error = app.Environment.IsProduction() ? "Service unavailable." : ex.Message;
+        return Results.Json(new { status = "unhealthy", environment = env.EnvironmentName, error, utc = DateTime.UtcNow }, statusCode: 503);
     }
 });
 

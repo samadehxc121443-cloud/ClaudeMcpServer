@@ -25,3 +25,12 @@ VALUES
      'Seeded by docker-entrypoint-initdb.d — validation must fail with "revoked"',
      'Pro',  FALSE, NOW(), NULL)
 ON CONFLICT ("Key") DO NOTHING;
+
+-- Admin keys live in the database (never in env vars or config).
+-- With a seeded key present, the app skips its bootstrap-key generation.
+INSERT INTO "AdminKeys" ("Key", "Name", "IsActive", "CreatedAt")
+VALUES
+    ('demo-admin-99999999999999999999',
+     'Demo Admin (seeded)',
+     TRUE, NOW())
+ON CONFLICT ("Key") DO NOTHING;

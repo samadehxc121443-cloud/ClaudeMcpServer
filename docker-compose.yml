@@ -32,10 +32,11 @@ services:
       VAULT_TOKEN: ${VAULT_TOKEN:?VAULT_TOKEN is required — set it in .env}
     restart: "no"
     entrypoint: ["sh", "-c"]
+    # Only infrastructure secrets go into Vault. Application credentials
+    # (admin keys, license keys) are data and live in the database.
     command:
       - >-
         vault kv put secret/license-server
-        AdminKey='${ADMIN_KEY:?ADMIN_KEY is required — set it in .env}'
         ConnectionString='Host=postgres;Port=5432;Database=${POSTGRES_DB:-app};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}'
 
   license-server:
@@ -44,9 +45,12 @@ services:
       dockerfile: src/ClaudeMcpServer.LicenseServer/Dockerfile
     restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Production
-      # Secrets (AdminKey, DB connection string) are NOT set here on purpose:
-      # the app fetches them from Vault at startup using this address + token.
+      # Environment comes from .env so the same orchestration can run as
+      # Development (verbose errors, DI validation) or Production (terse).
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      # The DB connection string is NOT set here on purpose: the app fetches
+      # it from Vault at startup using this address + token. Admin keys are
+      # not configuration at all — they live in the database.
       VAULT_ADDR: http://vault:8200
       VAULT_TOKEN: ${VAULT_TOKEN}
       REDIS_CONNECTION: redis:6379

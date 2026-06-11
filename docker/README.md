@@ -26,9 +26,24 @@ curl -X POST http://localhost:8080/api/license/validate \
   -H "Content-Type: application/json" \
   -d '{"apiKey":"demo-pro-1111111111111111111111"}'
 
-# Admin: list all keys (use the ADMIN_KEY from your .env)
-curl http://localhost:8080/api/admin/keys -H "X-Admin-Key: <ADMIN_KEY>"
+# Admin: list all keys. Admin keys live in the DATABASE, not in .env —
+# this one is seeded by docker/postgres/init/02-seed.sql:
+curl http://localhost:8080/api/admin/keys -H "X-Admin-Key: demo-admin-99999999999999999999"
 ```
+
+## Environments
+
+`ASPNETCORE_ENVIRONMENT` is controlled from `.env` (default: `Development`).
+`/health` reports which one is active. Development validates the DI graph on
+startup and returns detailed errors; Production resolves lazily and keeps
+error responses terse.
+
+## Admin keys
+
+Admin keys are **data, not configuration**: they live in the `AdminKeys`
+table. Locally one is seeded (`demo-admin-...`); on a fresh database with no
+seed (e.g. Railway), the app generates a bootstrap admin key on first start
+and logs it once — grab it from the logs and store it securely.
 
 ## Layout
 

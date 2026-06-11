@@ -56,4 +56,8 @@ public sealed class CachingLicenseManagerService(
 
     public Task<int> CountKeysAsync(CancellationToken ct = default) =>
         inner.CountKeysAsync(ct);
+
+    // Never cached: revoking an admin key must take effect immediately.
+    public Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default) =>
+        inner.IsAdminKeyValidAsync(key, ct);
 }

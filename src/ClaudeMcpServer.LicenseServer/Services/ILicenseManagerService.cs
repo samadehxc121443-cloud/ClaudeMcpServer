@@ -10,4 +10,5 @@ public interface ILicenseManagerService
     Task<CreateKeyResult> CreateKeyAsync(CreateKeyRequest req, CancellationToken ct = default);
     Task<RevokeResult?> RevokeKeyAsync(int id, CancellationToken ct = default);
     Task<int> CountKeysAsync(CancellationToken ct = default);
+    Task<bool> IsAdminKeyValidAsync(string key, CancellationToken ct = default);
 }
