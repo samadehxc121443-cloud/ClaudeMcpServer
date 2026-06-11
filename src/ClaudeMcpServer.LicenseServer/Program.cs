@@ -1,11 +1,42 @@
+using System.Text.Json;
 using ClaudeMcpServer.LicenseServer.Data;
 using ClaudeMcpServer.LicenseServer.DTOs;
 using ClaudeMcpServer.LicenseServer.Filters;
 using ClaudeMcpServer.LicenseServer.Repositories;
 using ClaudeMcpServer.LicenseServer.Services;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Distributed;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Vault ─────────────────────────────────────────────────────────────────────
+// When VAULT_ADDR is set (Docker Compose), secrets come from Vault's KV store
+// instead of environment variables. Without it (Railway, local dev) the regular
+// configuration sources below keep working unchanged.
+var vaultAddr = builder.Configuration["VAULT_ADDR"];
+if (!string.IsNullOrWhiteSpace(vaultAddr))
+{
+    var vaultToken = builder.Configuration["VAULT_TOKEN"]
+        ?? throw new InvalidOperationException("VAULT_ADDR is set but VAULT_TOKEN is missing.");
+
+    using var http = new HttpClient();
+    http.DefaultRequestHeaders.Add("X-Vault-Token", vaultToken);
+
+    var url = $"{vaultAddr.TrimEnd('/')}/v1/secret/data/license-server";
+    using var response = await http.GetAsync(url);
+    response.EnsureSuccessStatusCode();
+
+    using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+    var data = doc.RootElement.GetProperty("data").GetProperty("data");
+
+    var secrets = new Dictionary<string, string?>();
+    if (data.TryGetProperty("AdminKey", out var adminKey))
+        secrets["AdminKey"] = adminKey.GetString();
+    if (data.TryGetProperty("ConnectionString", out var connString))
+        secrets["ConnectionStrings:DefaultConnection"] = connString.GetString();
+
+    builder.Configuration.AddInMemoryCollection(secrets);
+}
 
 builder.Services.AddDbContext<LicenseDbContext>(opts =>
 {
@@ -33,15 +64,32 @@ builder.Services.AddDbContext<LicenseDbContext>(opts =>
 builder.Services.AddScoped<ILicenseKeyRepository, LicenseKeyRepository>();
 builder.Services.AddScoped<ISessionTokenRepository, SessionTokenRepository>();
 builder.Services.AddScoped<IUnitOfWork, UnitOfWork>();
-// Register the real service under its concrete type so the decorator can resolve it
+// Register the real service under its concrete type so the decorators can resolve it
 builder.Services.AddScoped<LicenseManagerService>();
-// Register the interface via factory: the decorator wraps the concrete service.
-// (Registering it as AddScoped<ILicenseManagerService, LoggingLicenseManagerService>
-// would be circular — the decorator's ctor asks for ILicenseManagerService.)
-builder.Services.AddScoped<ILicenseManagerService>(sp =>
-    new LoggingLicenseManagerService(
-        sp.GetRequiredService<LicenseManagerService>(),
-        sp.GetRequiredService<ILogger<LoggingLicenseManagerService>>()));
+
+// Decorator stack, built via factory (registering the interface directly against a
+// decorator whose ctor asks for ILicenseManagerService would be circular).
+// With Redis configured:    Logging → Caching → LicenseManagerService
+// Without (Railway, local): Logging → LicenseManagerService
+var redisConnection = builder.Configuration["REDIS_CONNECTION"];
+if (!string.IsNullOrWhiteSpace(redisConnection))
+{
+    builder.Services.AddStackExchangeRedisCache(opts => opts.Configuration = redisConnection);
+    builder.Services.AddScoped<ILicenseManagerService>(sp =>
+        new LoggingLicenseManagerService(
+            new CachingLicenseManagerService(
+                sp.GetRequiredService<LicenseManagerService>(),
+                sp.GetRequiredService<IDistributedCache>(),
+                sp.GetRequiredService<ILogger<CachingLicenseManagerService>>()),
+            sp.GetRequiredService<ILogger<LoggingLicenseManagerService>>()));
+}
+else
+{
+    builder.Services.AddScoped<ILicenseManagerService>(sp =>
+        new LoggingLicenseManagerService(
+            sp.GetRequiredService<LicenseManagerService>(),
+            sp.GetRequiredService<ILogger<LoggingLicenseManagerService>>()));
+}
 
 var app = builder.Build();
 

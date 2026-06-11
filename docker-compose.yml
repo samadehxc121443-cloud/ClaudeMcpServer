@@ -4,15 +4,40 @@
 #   cp .env.example .env   (then edit the secrets)
 #   docker compose up --build
 #
-# The generic Postgres service is included from docker/compose.postgres.yml
-# so it can be reused by other orchestrations.
+# Generic, reusable infra services are included from docker/ so other
+# orchestrations can pick them up individually:
+#   - Postgres : database with persistent volume + initdb seeding
+#   - Redis    : cache backing the CachingLicenseManagerService decorator
+#   - Vault    : secrets store — the app reads AdminKey and the DB
+#                connection string from here, not from env vars
 
 name: license-server
 
 include:
   - docker/compose.postgres.yml
+  - docker/compose.redis.yml
+  - docker/compose.vault.yml
 
 services:
+  # One-shot job: seeds the app's secrets into Vault on every `up`.
+  # Lives here (not in compose.vault.yml) because WHAT goes into Vault
+  # is specific to this orchestration; the Vault server itself is generic.
+  vault-init:
+    image: hashicorp/vault:1.18
+    depends_on:
+      vault:
+        condition: service_healthy
+    environment:
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_TOKEN:?VAULT_TOKEN is required — set it in .env}
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - >-
+        vault kv put secret/license-server
+        AdminKey='${ADMIN_KEY:?ADMIN_KEY is required — set it in .env}'
+        ConnectionString='Host=postgres;Port=5432;Database=${POSTGRES_DB:-app};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}'
+
   license-server:
     build:
       context: .
@@ -20,12 +45,17 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
-      # Key-value format on purpose: the DATABASE_URL (URI) code path in
-      # Program.cs forces SSL, which the local Postgres container doesn't have.
-      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=${POSTGRES_DB:-app};Username=${POSTGRES_USER:-postgres};Password=${POSTGRES_PASSWORD}"
-      AdminKey: ${ADMIN_KEY:?ADMIN_KEY is required — set it in .env}
+      # Secrets (AdminKey, DB connection string) are NOT set here on purpose:
+      # the app fetches them from Vault at startup using this address + token.
+      VAULT_ADDR: http://vault:8200
+      VAULT_TOKEN: ${VAULT_TOKEN}
+      REDIS_CONNECTION: redis:6379
     ports:
       - "${LICENSE_SERVER_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+      vault-init:
+        condition: service_completed_successfully
