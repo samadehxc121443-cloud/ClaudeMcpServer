@@ -50,23 +50,12 @@ Adding a new tool requires exactly two changes:
 
 `ToolRegistry` auto-discovers all `IToolHandler` registrations via `IEnumerable<IToolHandler>` DI injection — no other changes needed.
 
-## LicenseServer Architecture
+## LicenseServer (moved)
 
-`ClaudeMcpServer.LicenseServer` is a standalone ASP.NET Core Minimal API deployed on Railway. Its internal structure uses:
-
-- **Repository Pattern** — `ILicenseKeyRepository`, `ISessionTokenRepository`, `IAdminKeyRepository` abstract all DB access.
-- **Unit of Work** — `IUnitOfWork` / `UnitOfWork` wraps `DbContext.SaveChangesAsync` so services never call it directly.
-- **Service Layer** — `ILicenseManagerService` / `LicenseManagerService` holds all business logic.
-- **Decorator Pattern (stacked)** — `Logging → Caching(Redis) → LicenseManagerService`. The interface is registered via a **factory** in `Program.cs`; registering it directly against a decorator whose ctor asks for `ILicenseManagerService` is circular and breaks at the first runtime resolution. The caching layer only forms when `REDIS_CONNECTION` is set.
-
-**Security model:**
-- **Admin keys are data, not configuration** — they live in the `AdminKeys` table, never in env vars. Admin endpoints (`AdminKeyFilter`) accept a Keycloak bearer token with the `license-admin` realm role (humans) or `X-Admin-Key` validated against the DB (machine-to-machine). On a fresh DB with no admin keys, the app generates a bootstrap key and logs it once.
-- **Infrastructure secrets** (DB connection string) come from Vault when `VAULT_ADDR` is set; otherwise from regular configuration (Railway uses `DATABASE_URL`).
-- `ASPNETCORE_ENVIRONMENT` is never hardcoded — it comes from `.env`; `/health` reports the active environment.
-
-## Docker Compose Orchestration
-
-`docker compose up --build` runs LicenseServer + Postgres + Redis + Vault + Keycloak. Generic, reusable infra services live in `docker/compose.*.yml` and are pulled in via `include:`; app-specific glue (Vault seeding, Keycloak realm content, Postgres init scripts) stays in the root compose / `docker/` data folders. See `docker/README.md` for the full flow, demo credentials, and day-2 commands. After adding an EF migration, regenerate `docker/postgres/init/01-schema.sql` with `dotnet ef migrations script --idempotent`.
+The LicenseServer, its tests and the Docker Compose orchestration now live in
+their own private repo: [mcp-license-platform](https://github.com/samadehxc121443-cloud/mcp-license-platform)
+(local folder: `Desktop\mcp-license-platform`). This repo contains only the
+MCP server.
 
 ## Critical Protocol Constraint
 
