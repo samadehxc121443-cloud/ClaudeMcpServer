@@ -44,12 +44,24 @@ public class CallToolHandlerTests
     {
         public Task<LicenseResult> ValidateAsync(CancellationToken ct) =>
             Task.FromResult(LicenseResult.Valid("test"));
+
+        public Task<UsageStatus> CheckUsageAsync(string operation, int count, CancellationToken ct) =>
+            Task.FromResult(UsageStatus.Untracked());
+
+        public Task<UsageStatus> RecordUsageAsync(string operation, int count, CancellationToken ct) =>
+            Task.FromResult(UsageStatus.Untracked());
     }
 
     private sealed class InvalidLicense(string reason = "License revoked.") : ILicenseService
     {
         public Task<LicenseResult> ValidateAsync(CancellationToken ct) =>
             Task.FromResult(LicenseResult.Invalid(reason));
+
+        public Task<UsageStatus> CheckUsageAsync(string operation, int count, CancellationToken ct) =>
+            Task.FromResult(UsageStatus.Untracked());
+
+        public Task<UsageStatus> RecordUsageAsync(string operation, int count, CancellationToken ct) =>
+            Task.FromResult(UsageStatus.Untracked());
     }
 
     /// <summary>Verifies the handler dispatches to the correct tool and returns a result.</summary>

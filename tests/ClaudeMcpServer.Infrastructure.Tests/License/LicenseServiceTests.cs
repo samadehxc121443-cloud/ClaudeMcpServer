@@ -80,6 +80,14 @@ public class LicenseServiceTests
                 Encoding.UTF8, "application/json")
         };
 
+    private static HttpResponseMessage UsageResponse(int used, int? limit, double? percentUsed, bool allowed) =>
+        new(HttpStatusCode.OK)
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(new { operation = "email", used, limit, percentUsed, allowed }),
+                Encoding.UTF8, "application/json")
+        };
+
     // ── DevMode ────────────────────────────────────────────────────────────
 
     /// <summary>When DevMode is true no HTTP call is made and the result is valid.</summary>
@@ -219,5 +227,98 @@ public class LicenseServiceTests
 
         Assert.False(result.IsValid);
         Assert.Contains("timed out", result.Message);
+    }
+
+    // ── Usage tracking ─────────────────────────────────────────────────────
+
+    /// <summary>In dev mode, usage checks are allowed and make no HTTP call.</summary>
+    [Fact]
+    public async Task CheckUsageAsync_Allows_And_Skips_HTTP_In_DevMode()
+    {
+        var handler = new FakeHttpHandler(); // would throw if called
+        var svc = Build(handler, Opts(devMode: true));
+
+        var status = await svc.CheckUsageAsync("email", 5, CancellationToken.None);
+
+        Assert.True(status.Allowed);
+        Assert.False(status.Tracked);
+        Assert.Equal(0, handler.CallCount);
+    }
+
+    /// <summary>When the requested count still fits the limit, the check is allowed.</summary>
+    [Fact]
+    public async Task CheckUsageAsync_Allows_When_Within_Limit()
+    {
+        var handler = new FakeHttpHandler(UsageResponse(used: 10, limit: 100, percentUsed: 10, allowed: true));
+        var svc = Build(handler);
+
+        var status = await svc.CheckUsageAsync("email", 50, CancellationToken.None);
+
+        Assert.True(status.Allowed);
+        Assert.True(status.Tracked);
+    }
+
+    /// <summary>When the requested count would exceed the limit, the check is denied.</summary>
+    [Fact]
+    public async Task CheckUsageAsync_Denies_When_Count_Would_Exceed_Limit()
+    {
+        // 95 used + 10 requested = 105 > 100
+        var handler = new FakeHttpHandler(UsageResponse(used: 95, limit: 100, percentUsed: 95, allowed: true));
+        var svc = Build(handler);
+
+        var status = await svc.CheckUsageAsync("email", 10, CancellationToken.None);
+
+        Assert.False(status.Allowed);
+        Assert.Equal(95, status.Used);
+        Assert.Equal(100, status.Limit);
+    }
+
+    /// <summary>An unlimited plan (null limit) always allows.</summary>
+    [Fact]
+    public async Task CheckUsageAsync_Allows_When_Limit_Is_Null()
+    {
+        var handler = new FakeHttpHandler(UsageResponse(used: 9999, limit: null, percentUsed: null, allowed: true));
+        var svc = Build(handler);
+
+        var status = await svc.CheckUsageAsync("email", 1000, CancellationToken.None);
+
+        Assert.True(status.Allowed);
+    }
+
+    /// <summary>Fail open: when the server is unreachable, the check allows the operation.</summary>
+    [Fact]
+    public async Task CheckUsageAsync_Fails_Open_On_Network_Error()
+    {
+        var svc = Build(new NetworkFailHandler());
+
+        var status = await svc.CheckUsageAsync("email", 5, CancellationToken.None);
+
+        Assert.True(status.Allowed);
+        Assert.False(status.Tracked);
+    }
+
+    /// <summary>A successful report returns the updated usage with percent used.</summary>
+    [Fact]
+    public async Task RecordUsageAsync_Returns_Tracked_Status()
+    {
+        var handler = new FakeHttpHandler(UsageResponse(used: 91, limit: 100, percentUsed: 91, allowed: true));
+        var svc = Build(handler);
+
+        var status = await svc.RecordUsageAsync("email", 1, CancellationToken.None);
+
+        Assert.True(status.Tracked);
+        Assert.Equal(91, status.Used);
+        Assert.Equal(91, status.PercentUsed);
+    }
+
+    /// <summary>Best-effort: a network failure while recording does not throw.</summary>
+    [Fact]
+    public async Task RecordUsageAsync_Does_Not_Throw_On_Network_Error()
+    {
+        var svc = Build(new NetworkFailHandler());
+
+        var status = await svc.RecordUsageAsync("email", 1, CancellationToken.None);
+
+        Assert.False(status.Tracked);
     }
 }

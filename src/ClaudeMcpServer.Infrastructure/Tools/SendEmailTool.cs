@@ -7,6 +7,7 @@ using ClaudeMcpServer.Infrastructure.Configuration;
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using MimeKit;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ClaudeMcpServer.Infrastructure.Tools;
@@ -19,10 +20,19 @@ namespace ClaudeMcpServer.Infrastructure.Tools;
 /// </summary>
 public sealed class SendEmailTool : IToolHandler
 {
+    private const string MeteredOperation = "email";
+
     private readonly EmailSettings _settings;
+    private readonly ILicenseService _license;
+    private readonly ILogger<SendEmailTool> _logger;
 
     /// <summary>Initializes a new instance of <see cref="SendEmailTool"/>.</summary>
-    public SendEmailTool(IOptions<EmailSettings> settings) => _settings = settings.Value;
+    public SendEmailTool(IOptions<EmailSettings> settings, ILicenseService license, ILogger<SendEmailTool> logger)
+    {
+        _settings = settings.Value;
+        _license = license;
+        _logger = logger;
+    }
 
     /// <inheritdoc/>
     public string ToolName => "send_email";
@@ -100,6 +110,21 @@ public sealed class SendEmailTool : IToolHandler
         if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
             return ToolResult.Error("Parameters 'subject' and 'body' must not be empty.");
 
+        // Quota check BEFORE sending: every recipient counts against the daily plan
+        // limit. Blocks here so we never exceed the limit; fails open if tracking is down.
+        var quota = await _license.CheckUsageAsync(MeteredOperation, recipients.Total, ct);
+        if (!quota.Allowed)
+        {
+            _logger.LogWarning("Send blocked by daily limit: {Used}/{Limit} used, message needs {Count}.",
+                quota.Used, quota.Limit, recipients.Total);
+            return ToolResult.Error(
+                $"Daily email limit reached: {quota.Used}/{quota.Limit} used today, and this message "
+              + $"would add {recipients.Total}. Try again tomorrow or upgrade your plan.");
+        }
+
+        if (recipients.Total > 1)
+            _logger.LogInformation("Sending to {Count} recipients.", recipients.Total);
+
         var htmlBody = parameters.TryGetProperty("html_body", out var htmlProp)
             ? htmlProp.GetString()
             : null;
@@ -161,6 +186,9 @@ public sealed class SendEmailTool : IToolHandler
             await smtp.SendAsync(message, ct);
             await smtp.DisconnectAsync(true, ct);
 
+            // Record usage AFTER a successful send so failed sends don't consume quota.
+            var usage = await _license.RecordUsageAsync(MeteredOperation, recipients.Total, ct);
+
             var summary = recipients.Total == 1
                 ? $"Email sent to {recipients.To[0]}"
                 : $"Email sent to {recipients.Total} recipients ({recipients.To.Count} to, {recipients.Cc.Count} cc, {recipients.Bcc.Count} bcc)";
@@ -168,6 +196,10 @@ public sealed class SendEmailTool : IToolHandler
                 summary += $" with {attachmentPaths.Count} attachment(s)";
             if (!string.IsNullOrWhiteSpace(htmlBody))
                 summary += " (HTML + plain text)";
+
+            // Warn the client when they cross 90% of their daily limit.
+            if (usage is { Tracked: true, PercentUsed: >= 90, Limit: not null })
+                summary += $". Heads up: you've used {usage.Used}/{usage.Limit} emails today ({usage.PercentUsed}% of your daily limit)";
 
             return ToolResult.Success($"{summary}.");
         }
