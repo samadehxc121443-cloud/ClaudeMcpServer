@@ -115,6 +115,77 @@ public sealed class LicenseService : ILicenseService
         }
     }
 
+    /// <inheritdoc/>
+    public async Task<UsageStatus> CheckUsageAsync(string operation, int count, CancellationToken ct)
+    {
+        // No tracking in dev mode or without a server — fail open.
+        if (_settings.DevMode || string.IsNullOrWhiteSpace(_settings.ServerUrl) || string.IsNullOrWhiteSpace(_settings.ApiKey))
+            return UsageStatus.Untracked();
+
+        var snapshot = await QueryUsageAsync(operation, ct);
+        if (snapshot is null)
+            return UsageStatus.Untracked(); // server unreachable — fail open
+
+        // The server's query reports current usage; decide locally whether the
+        // requested count still fits, so we can block BEFORE sending.
+        var allowed = snapshot.Limit is null || snapshot.Used + count <= snapshot.Limit.Value;
+        return snapshot with { Allowed = allowed };
+    }
+
+    /// <inheritdoc/>
+    public async Task<UsageStatus> RecordUsageAsync(string operation, int count, CancellationToken ct)
+    {
+        if (_settings.DevMode || string.IsNullOrWhiteSpace(_settings.ServerUrl) || string.IsNullOrWhiteSpace(_settings.ApiKey))
+            return UsageStatus.Untracked();
+
+        try
+        {
+            var endpoint = $"{_settings.ServerUrl.TrimEnd('/')}/api/usage/report";
+            var response = await _http.PostAsJsonAsync(endpoint, new { apiKey = _settings.ApiKey, operation, count }, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Usage report for '{Operation}' failed ({Status}); continuing.", operation, response.StatusCode);
+                return UsageStatus.Untracked();
+            }
+
+            var usage = await response.Content.ReadFromJsonAsync<UsageResponse>(ct);
+            return usage is null
+                ? UsageStatus.Untracked()
+                : new UsageStatus(usage.Allowed, usage.Used, usage.Limit, usage.PercentUsed, Tracked: true);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            // Best-effort: the email already sent, so a tracking failure must not surface as an error.
+            _logger.LogWarning(ex, "Could not report usage for '{Operation}'; continuing.", operation);
+            return UsageStatus.Untracked();
+        }
+    }
+
+    /// <summary>Queries today's usage snapshot without consuming quota. Returns null on any failure.</summary>
+    private async Task<UsageStatus?> QueryUsageAsync(string operation, CancellationToken ct)
+    {
+        try
+        {
+            var endpoint = $"{_settings.ServerUrl.TrimEnd('/')}/api/usage/query";
+            var response = await _http.PostAsJsonAsync(endpoint, new { apiKey = _settings.ApiKey, operation, count = 1 }, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Usage query for '{Operation}' failed ({Status}); allowing the operation.", operation, response.StatusCode);
+                return null;
+            }
+
+            var usage = await response.Content.ReadFromJsonAsync<UsageResponse>(ct);
+            return usage is null
+                ? null
+                : new UsageStatus(usage.Allowed, usage.Used, usage.Limit, usage.PercentUsed, Tracked: true);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(ex, "Could not query usage for '{Operation}'; allowing the operation.", operation);
+            return null;
+        }
+    }
+
     private static async Task<string?> TryParseError(string body)
     {
         try
@@ -131,4 +202,10 @@ public sealed class LicenseService : ILicenseService
         [property: JsonPropertyName("token")]      string?   Token,
         [property: JsonPropertyName("clientName")] string?   ClientName,
         [property: JsonPropertyName("expiresAt")]  DateTime? ExpiresAt);
+
+    private sealed record UsageResponse(
+        [property: JsonPropertyName("used")]        int     Used,
+        [property: JsonPropertyName("limit")]       int?    Limit,
+        [property: JsonPropertyName("percentUsed")] double? PercentUsed,
+        [property: JsonPropertyName("allowed")]     bool    Allowed);
 }
